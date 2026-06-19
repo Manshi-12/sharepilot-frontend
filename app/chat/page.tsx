@@ -16,6 +16,12 @@ interface Session {
   lastUpdated: string;
 }
 
+interface UserProfile {
+  userId: string;
+  email: string;
+  displayName: string;
+}
+
 export default function ChatPage() {
   const router = useRouter();
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -25,12 +31,33 @@ export default function ChatPage() {
   const [sending, setSending] = useState(false);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [user, setUser] = useState<UserProfile | null>(null);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const userMenuRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const bgCanvasRef = useRef<HTMLCanvasElement>(null);
 
-  useEffect(() => { loadSessions(); }, []);
+  useEffect(() => { loadSessions(); loadUser(); }, []);
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
+
+  useEffect(() => {
+    function onClickOutside(e: MouseEvent) {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
+        setUserMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, []);
+
+  const loadUser = async () => {
+    const res = await fetch("/api/auth/me");
+    if (res.ok) {
+      const data = await res.json();
+      setUser(data.user);
+    }
+  };
 
   // ── Subtle live aurora background behind the message area ─────────────────
   // Same shader as the login page but slower-moving and much dimmer, so it
@@ -223,9 +250,9 @@ export default function ChatPage() {
         <div className="flex items-center gap-3 px-5 py-5 border-b border-[#e7eeff]">
           <div className="flex items-center justify-center w-8 h-8 rounded-xl bg-gradient-to-br from-[#2b6389] to-[#466272]">
             <svg width="16" height="16" viewBox="0 0 28 28" fill="none">
-              <path d="M6 8h16M6 14h10M6 20h13" stroke="white" strokeWidth="2.5" strokeLinecap="round"/>
-              <circle cx="21" cy="20" r="5" fill="#98ccf8"/>
-              <path d="M19 20l1.5 1.5L23 18.5" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              <path d="M6 8h16M6 14h10M6 20h13" stroke="white" strokeWidth="2.5" strokeLinecap="round" />
+              <circle cx="21" cy="20" r="5" fill="#98ccf8" />
+              <path d="M19 20l1.5 1.5L23 18.5" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </div>
           <span className="font-bold text-[#121c2c] text-sm" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
@@ -239,7 +266,7 @@ export default function ChatPage() {
             className="w-full flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-[#2b6389] to-[#466272] text-white text-sm font-semibold hover:shadow-[0_4px_12px_rgba(43,99,137,0.3)] transition-all duration-200"
           >
             <svg width="16" height="16" fill="none" viewBox="0 0 16 16">
-              <path d="M8 3v10M3 8h10" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+              <path d="M8 3v10M3 8h10" stroke="white" strokeWidth="2" strokeLinecap="round" />
             </svg>
             New Chat
           </button>
@@ -253,9 +280,8 @@ export default function ChatPage() {
               <button
                 key={s.sessionId}
                 onClick={() => loadMessages(s.sessionId)}
-                className={`w-full text-left px-3 py-3 rounded-xl mb-1 transition-all duration-150 ${
-                  activeSessionId === s.sessionId ? "bg-[#e7eeff] text-[#2b6389]" : "text-[#41474e] hover:bg-[#f0f3ff]"
-                }`}
+                className={`w-full text-left px-3 py-3 rounded-xl mb-1 transition-all duration-150 ${activeSessionId === s.sessionId ? "bg-[#e7eeff] text-[#2b6389]" : "text-[#41474e] hover:bg-[#f0f3ff]"
+                  }`}
               >
                 <p className="text-sm font-medium truncate">{s.title}</p>
                 <p className="text-xs text-[#71787f] mt-0.5">{formatDate(s.lastUpdated)}</p>
@@ -264,15 +290,37 @@ export default function ChatPage() {
           )}
         </div>
 
-        <div className="px-4 py-4 border-t border-[#e7eeff]">
+        <div ref={userMenuRef} className="relative px-4 py-4 border-t border-[#e7eeff]">
+          {userMenuOpen && (
+            <div className="absolute bottom-full left-4 right-4 mb-2 bg-white rounded-xl border border-[#e7eeff] shadow-lg shadow-[#2b6389]/10 overflow-hidden">
+              <div className="px-4 py-3 border-b border-[#e7eeff]">
+                <p className="text-sm font-semibold text-[#121c2c] truncate">{user?.displayName || "Loading…"}</p>
+                <p className="text-xs text-[#71787f] truncate">{user?.email}</p>
+              </div>
+              <button
+                onClick={handleLogout}
+                className="w-full flex items-center gap-2 px-4 py-3 text-[#ba1a1a] text-sm hover:bg-[#ffdad6]/40 transition-colors"
+              >
+                <svg width="16" height="16" fill="none" viewBox="0 0 16 16">
+                  <path d="M6 14H3a1 1 0 01-1-1V3a1 1 0 011-1h3M11 11l3-3-3-3M14 8H6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                Sign Out
+              </button>
+            </div>
+          )}
           <button
-            onClick={handleLogout}
-            className="w-full flex items-center gap-2 px-4 py-2.5 rounded-xl text-[#41474e] text-sm hover:bg-[#f0f3ff] transition-colors"
+            onClick={() => setUserMenuOpen((v) => !v)}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left hover:bg-[#f0f3ff] transition-colors"
           >
-            <svg width="16" height="16" fill="none" viewBox="0 0 16 16">
-              <path d="M6 14H3a1 1 0 01-1-1V3a1 1 0 011-1h3M11 11l3-3-3-3M14 8H6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#2b6389] to-[#466272] flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+              {(user?.displayName || "?").trim().charAt(0).toUpperCase()}
+            </div>
+            <span className="flex-1 min-w-0 text-sm font-medium text-[#121c2c] truncate">
+              {user?.displayName || "Account"}
+            </span>
+            <svg width="14" height="14" fill="none" viewBox="0 0 16 16" className={`text-[#71787f] flex-shrink-0 transition-transform duration-200 ${userMenuOpen ? "rotate-180" : ""}`}>
+              <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
-            Sign Out
           </button>
         </div>
       </aside>
@@ -282,7 +330,7 @@ export default function ChatPage() {
         <header className="flex items-center gap-3 px-6 py-4 bg-white/60 backdrop-blur-xl border-b border-[#2b6389]/10">
           <button onClick={() => setSidebarOpen(!sidebarOpen)} className="p-2 rounded-lg text-[#41474e] hover:bg-[#e7eeff] transition-colors">
             <svg width="18" height="18" fill="none" viewBox="0 0 18 18">
-              <path d="M2 4.5h14M2 9h14M2 13.5h14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+              <path d="M2 4.5h14M2 9h14M2 13.5h14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
             </svg>
           </button>
           <h2 className="font-semibold text-[#121c2c] text-sm" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
@@ -300,9 +348,9 @@ export default function ChatPage() {
             <div className="flex flex-col items-center justify-center h-full text-center max-w-md mx-auto">
               <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#2b6389] to-[#466272] flex items-center justify-center mb-4 shadow-lg shadow-[#8cc0eb]/30">
                 <svg width="32" height="32" viewBox="0 0 28 28" fill="none">
-                  <path d="M6 8h16M6 14h10M6 20h13" stroke="white" strokeWidth="2.2" strokeLinecap="round"/>
-                  <circle cx="21" cy="20" r="5" fill="#98ccf8"/>
-                  <path d="M19 20l1.5 1.5L23 18.5" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M6 8h16M6 14h10M6 20h13" stroke="white" strokeWidth="2.2" strokeLinecap="round" />
+                  <circle cx="21" cy="20" r="5" fill="#98ccf8" />
+                  <path d="M19 20l1.5 1.5L23 18.5" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
               </div>
               <h3 className="text-xl font-bold text-[#121c2c] mb-2" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
@@ -330,15 +378,14 @@ export default function ChatPage() {
                   {msg.role === "assistant" && (
                     <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-[#2b6389] to-[#466272] flex items-center justify-center mr-2 mt-1 flex-shrink-0">
                       <svg width="14" height="14" viewBox="0 0 28 28" fill="none">
-                        <path d="M6 8h16M6 14h10" stroke="white" strokeWidth="2.5" strokeLinecap="round"/>
+                        <path d="M6 8h16M6 14h10" stroke="white" strokeWidth="2.5" strokeLinecap="round" />
                       </svg>
                     </div>
                   )}
-                  <div className={`max-w-[75%] px-4 py-3 rounded-2xl text-sm leading-relaxed ${
-                    msg.role === "user"
-                      ? "bg-gradient-to-br from-[#2b6389] to-[#466272] text-white rounded-br-sm"
-                      : "bg-white/80 backdrop-blur text-[#121c2c] border border-[#dee8ff] rounded-bl-sm shadow-sm"
-                  }`}>
+                  <div className={`max-w-[75%] px-4 py-3 rounded-2xl text-sm leading-relaxed ${msg.role === "user"
+                    ? "bg-gradient-to-br from-[#2b6389] to-[#466272] text-white rounded-br-sm"
+                    : "bg-white/80 backdrop-blur text-[#121c2c] border border-[#dee8ff] rounded-bl-sm shadow-sm"
+                    }`}>
                     <p className="whitespace-pre-wrap">{msg.content}</p>
                     <p className={`text-xs mt-1.5 ${msg.role === "user" ? "text-[#98ccf8]" : "text-[#71787f]"}`}>
                       {formatTime(msg.timestamp)}
@@ -350,7 +397,7 @@ export default function ChatPage() {
                 <div className="flex justify-start">
                   <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-[#2b6389] to-[#466272] flex items-center justify-center mr-2 mt-1 flex-shrink-0">
                     <svg width="14" height="14" viewBox="0 0 28 28" fill="none">
-                      <path d="M6 8h16M6 14h10" stroke="white" strokeWidth="2.5" strokeLinecap="round"/>
+                      <path d="M6 8h16M6 14h10" stroke="white" strokeWidth="2.5" strokeLinecap="round" />
                     </svg>
                   </div>
                   <div className="bg-white/80 border border-[#dee8ff] rounded-2xl rounded-bl-sm px-4 py-3 shadow-sm">
@@ -391,7 +438,7 @@ export default function ChatPage() {
                 className="flex-shrink-0 w-9 h-9 rounded-xl bg-gradient-to-br from-[#2b6389] to-[#466272] flex items-center justify-center text-white transition-all duration-150 hover:shadow-[0_4px_12px_rgba(43,99,137,0.35)] hover:-translate-y-0.5 disabled:opacity-40 disabled:hover:shadow-none disabled:hover:translate-y-0"
               >
                 <svg width="16" height="16" fill="none" viewBox="0 0 16 16">
-                  <path d="M14 8L2 2l2.5 6L2 14l12-6z" fill="white"/>
+                  <path d="M14 8L2 2l2.5 6L2 14l12-6z" fill="white" />
                 </svg>
               </button>
             </div>

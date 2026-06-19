@@ -1,14 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { v4 as uuidv4 } from "uuid";
 import { usersContainer } from "@/lib/cosmos";
-import {
-  hashPassword,
-  signAccessToken,
-  createRefreshToken,
-  ACCESS_TOKEN_COOKIE,
-  REFRESH_TOKEN_COOKIE,
-  cookieOptions,
-} from "@/lib/auth";
+import { hashPassword } from "@/lib/auth";
 
 export async function POST(req: NextRequest) {
   try {
@@ -55,16 +48,12 @@ export async function POST(req: NextRequest) {
       createdAt: new Date().toISOString(),
     });
 
-    const accessToken = await signAccessToken(userId, email.toLowerCase());
-    const refreshToken = await createRefreshToken(userId);
-
-    const res = NextResponse.json(
-      { user: { userId, email: email.toLowerCase(), displayName: displayName.trim() }, accessToken },
+    // Note: registration no longer auto-signs-in the user. They're sent back
+    // to the Sign In tab and log in explicitly with their new credentials.
+    return NextResponse.json(
+      { user: { userId, email: email.toLowerCase(), displayName: displayName.trim() } },
       { status: 201 }
     );
-    res.headers.append("Set-Cookie", `${ACCESS_TOKEN_COOKIE}=${accessToken}; ${cookieOptions(15 * 60)}`);
-    res.headers.append("Set-Cookie", `${REFRESH_TOKEN_COOKIE}=${refreshToken}; ${cookieOptions(7 * 24 * 60 * 60)}`);
-    return res;
   } catch (err: any) {
     console.error("Register error:", err);
     return NextResponse.json({ error: "Registration failed. Please try again." }, { status: 500 });

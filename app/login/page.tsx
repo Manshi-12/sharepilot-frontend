@@ -12,39 +12,50 @@ const FLOATING_CARDS = [
   { icon: "🤖", label: "AI Agent", text: "Ask SharePilot Anything", top: "62%", left: "4%", duration: 7.5, tx: 18, ty: 12, rot: 2 },
 ] as const;
 
+type Mode = "login" | "register" | "forgot";
+
+const EYE_OPEN = (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+    <path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7z" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.6" />
+  </svg>
+);
+const EYE_CLOSED = (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+    <path d="M3 3l18 18M10.6 10.6a2 2 0 002.8 2.8M9.5 5.4A10.4 10.4 0 0112 5c5 0 9 4 10 7-0.4 1.2-1.2 2.6-2.3 3.8M6.3 6.5C4.4 7.8 3 9.6 2 12c1 3 5 7 10 7 1.3 0 2.5-.2 3.6-.6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
+const EMPTY_FORM = { email: "", password: "", confirmPassword: "", displayName: "", newPassword: "", confirmNewPassword: "" };
+
 export default function LoginPage() {
   const router = useRouter();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const orbWrapRef = useRef<HTMLDivElement>(null);
   const orbRef = useRef<HTMLDivElement>(null);
 
-  const [mode, setMode] = useState<"login" | "register">("login");
+  const [mode, setMode] = useState<Mode>("login");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [form, setForm] = useState({ email: "", password: "", confirmPassword: "", displayName: "" });
+  const [notice, setNotice] = useState("");
+  const [form, setForm] = useState(EMPTY_FORM);
   const [poppedCard, setPoppedCard] = useState<number | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmNewPassword, setShowConfirmNewPassword] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<{ [key: string]: string }>({});
 
-  const validate = () => {
-    const errs: { [key: string]: string } = {};
-    const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-    if (!emailRe.test(form.email)) errs.email = "Enter a valid email address.";
-
-    if (mode === "register") {
-      if (form.displayName.trim().length < 2) errs.displayName = "Enter your full name.";
-      if (form.password.length < 8) errs.password = "Password must be at least 8 characters.";
-      if (!/[A-Z]/.test(form.password)) errs.password = "Include at least one uppercase letter.";
-      else if (!/[0-9]/.test(form.password)) errs.password = "Include at least one number.";
-      if (form.confirmPassword !== form.password) errs.confirmPassword = "Passwords don't match.";
-    } else {
-      if (!form.password) errs.password = "Password is required.";
-    }
-
-    setFieldErrors(errs);
-    return Object.keys(errs).length === 0;
+  const switchMode = (next: Mode) => {
+    setMode(next);
+    setError("");
+    setNotice("");
+    setFieldErrors({});
+    setForm(EMPTY_FORM);
+    setShowPassword(false);
+    setShowConfirmPassword(false);
+    setShowNewPassword(false);
+    setShowConfirmNewPassword(false);
   };
 
   const handleCardClick = (i: number) => {
@@ -154,12 +165,56 @@ export default function LoginPage() {
     return () => window.removeEventListener("mousemove", onMove);
   }, []);
 
+  const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+  const validate = (): boolean => {
+    const errs: { [key: string]: string } = {};
+
+    if (!emailRe.test(form.email)) errs.email = "Enter a valid email address.";
+
+    if (mode === "register") {
+      if (form.displayName.trim().length < 2) errs.displayName = "Enter your full name.";
+      if (form.password.length < 8) errs.password = "Password must be at least 8 characters.";
+      else if (!/[A-Z]/.test(form.password)) errs.password = "Include at least one uppercase letter.";
+      else if (!/[0-9]/.test(form.password)) errs.password = "Include at least one number.";
+      if (form.confirmPassword !== form.password) errs.confirmPassword = "Passwords don't match.";
+    } else if (mode === "login") {
+      if (!form.password) errs.password = "Password is required.";
+    } else if (mode === "forgot") {
+      if (form.newPassword.length < 8) errs.newPassword = "Password must be at least 8 characters.";
+      else if (!/[A-Z]/.test(form.newPassword)) errs.newPassword = "Include at least one uppercase letter.";
+      else if (!/[0-9]/.test(form.newPassword)) errs.newPassword = "Include at least one number.";
+      if (form.confirmNewPassword !== form.newPassword) errs.confirmNewPassword = "Passwords don't match.";
+    }
+
+    setFieldErrors(errs);
+    return Object.keys(errs).length === 0;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    setNotice("");
     if (!validate()) return;
     setLoading(true);
+
     try {
+      if (mode === "forgot") {
+        const res = await fetch("/api/auth/reset-password", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: form.email, newPassword: form.newPassword }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          setError(data.error || "Something went wrong.");
+          return;
+        }
+        switchMode("login");
+        setNotice("Password updated. Sign in with your new password.");
+        return;
+      }
+
       const endpoint = mode === "login" ? "/api/auth/login" : "/api/auth/register";
       const body =
         mode === "login"
@@ -176,6 +231,15 @@ export default function LoginPage() {
         setError(data.error || "Something went wrong.");
         return;
       }
+
+      if (mode === "register") {
+        const registeredEmail = form.email;
+        switchMode("login");
+        setForm((f) => ({ ...f, email: registeredEmail }));
+        setNotice("Account created! Sign in to continue.");
+        return;
+      }
+
       router.push("/chat");
       router.refresh();
     } catch {
@@ -183,6 +247,12 @@ export default function LoginPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const titles: Record<Mode, { heading: string; sub: string }> = {
+    login: { heading: "Welcome back", sub: "Sign in to your SharePilot workspace" },
+    register: { heading: "Create your account", sub: "Start managing SharePoint with AI" },
+    forgot: { heading: "Reset your password", sub: "Enter your email and choose a new password" },
   };
 
   return (
@@ -198,7 +268,7 @@ export default function LoginPage() {
           from { transform: translate(0,0) rotate(var(--rot)); }
           to   { transform: translate(var(--tx), var(--ty)) rotate(calc(var(--rot) + 5deg)); }
         }
-        @keyframes slideIn { from { opacity:0; transform: translateY(16px); } to { opacity:1; transform: translateY(0); } }
+        @keyframes fadeSwap { from { opacity:0; transform: translateY(6px); } to { opacity:1; transform: translateY(0); } }
         @keyframes shimmer { 0% { background-position:-200% center; } 100% { background-position:200% center; } }
 
         .ai-orb {
@@ -219,18 +289,20 @@ export default function LoginPage() {
           border: 1px solid rgba(255,255,255,0.6);
           box-shadow: 0 8px 32px 0 rgba(140,192,235,0.12);
           animation: drift var(--duration) ease-in-out infinite alternate;
-          transition: all .4s cubic-bezier(.4,0,.2,1);
+          transition: transform 0.25s cubic-bezier(.4,0,.2,1), background 0.25s ease, box-shadow 0.25s ease;
         }
-        .floating-card { transition: transform 0.25s cubic-bezier(.4,0,.2,1), background 0.25s ease, box-shadow 0.25s ease; }
         .floating-card:hover { transform: translateY(-14px) scale(1.12) !important; background: rgba(255,255,255,0.75); box-shadow: 0 16px 36px 0 rgba(140,192,235,0.2); }
-        .floating-card.popped { transform: scale(1.18) !important; background: rgba(255,255,255,0.85) !important; box-shadow: 0 14px 40px 0 rgba(140,192,235,0.28) !important; z-index: 20; }
+        .floating-card.popped { transform: scale(1.18) !important; background: rgba(255,255,255,0.85) !important; box-shadow: 0 14px 40px 0 rgba(140,192,235,0.28) !important; z-index: 25; }
 
-        .form-card { animation: slideIn 0.5s ease-out both; }
+        .form-card { animation: fadeSwap 0.3s ease-out both; }
         .login-btn-gradient { background: linear-gradient(135deg, #2b6389, #8cc0eb); transition: all .3s ease; }
         .login-btn-gradient:hover { filter: brightness(1.1); transform: translateY(-2px); box-shadow: 0 10px 20px -5px rgba(43,99,137,0.4); }
+
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
       `}</style>
 
-      <main className="relative min-h-screen w-full overflow-hidden bg-[#fbf9f1]" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+      <main className="relative h-screen w-full overflow-hidden bg-[#fbf9f1]" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
         {/* Aurora shader background */}
         <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" />
 
@@ -262,9 +334,9 @@ export default function LoginPage() {
         </div>
 
         {/* Layout: orb takes ~2/3, login card docked right */}
-        <div className="relative z-10 flex flex-col lg:flex-row min-h-screen w-full">
+        <div className="relative z-10 flex flex-col lg:flex-row h-full w-full overflow-hidden">
           {/* Left/center 2/3 — Orb + branding */}
-          <div className="flex-1 lg:flex-[2] flex flex-col items-center justify-center px-6 py-12">
+          <div className="flex-1 lg:flex-[2] flex flex-col items-center justify-center px-6 py-8 overflow-hidden">
             <div ref={orbWrapRef} className="orb-wrap cursor-pointer mb-6">
               <div className="relative w-[170px] h-[170px] flex items-center justify-center">
                 <div className="ring-1 orb-ring" />
@@ -283,10 +355,11 @@ export default function LoginPage() {
             </div>
           </div>
 
-          {/* Right 1/3 — Login modal, docked right */}
-          <div className="w-full lg:flex-[1] lg:max-w-md flex items-center justify-center px-6 py-10 lg:pr-12">
+          {/* Right 1/3 — Login modal, docked right, internally scrollable so the page never grows a real scrollbar */}
+          <div className="w-full lg:flex-[1] lg:max-w-md flex items-center justify-center px-6 py-6 lg:pr-12 overflow-y-auto no-scrollbar">
             <div
-              className="form-card w-full max-w-sm rounded-[2rem] p-8 flex flex-col gap-5"
+              key={mode}
+              className="form-card w-full max-w-sm rounded-[2rem] p-8 flex flex-col gap-5 my-auto"
               style={{
                 background: "rgba(255,255,255,0.45)",
                 backdropFilter: "blur(20px)",
@@ -296,27 +369,30 @@ export default function LoginPage() {
             >
               <div>
                 <h2 className="text-2xl font-bold text-[#1b1c17]" style={{ fontFamily: "'Manrope', sans-serif" }}>
-                  {mode === "login" ? "Welcome back" : "Create your account"}
+                  {titles[mode].heading}
                 </h2>
-                <p className="text-[#41474e] text-sm mt-1">
-                  {mode === "login" ? "Sign in to your SharePilot workspace" : "Start managing SharePoint with AI"}
-                </p>
+                <p className="text-[#41474e] text-sm mt-1">{titles[mode].sub}</p>
               </div>
 
-              {/* Tab switcher */}
-              <div className="flex bg-white/40 rounded-xl p-1">
-                {(["login", "register"] as const).map((tab) => (
-                  <button
-                    key={tab}
-                    type="button"
-                    onClick={() => { setMode(tab); setError(""); setFieldErrors({}); }}
-                    className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-all duration-200 ${mode === tab ? "bg-white text-[#2b6389] shadow-sm" : "text-[#41474e] hover:text-[#2b6389]"
-                      }`}
-                  >
-                    {tab === "login" ? "Sign In" : "Register"}
-                  </button>
-                ))}
-              </div>
+              {mode !== "forgot" && (
+                <div className="flex bg-white/40 rounded-xl p-1">
+                  {(["login", "register"] as const).map((tab) => (
+                    <button
+                      key={tab}
+                      type="button"
+                      onClick={() => switchMode(tab)}
+                      className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-all duration-200 ${mode === tab ? "bg-white text-[#2b6389] shadow-sm" : "text-[#41474e] hover:text-[#2b6389]"
+                        }`}
+                    >
+                      {tab === "login" ? "Sign In" : "Register"}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {notice && (
+                <div className="bg-[#dcf5e3] text-[#1b5e2a] text-sm px-4 py-3 rounded-xl">{notice}</div>
+              )}
 
               <form onSubmit={handleSubmit} className="flex flex-col gap-4">
                 {mode === "register" && (
@@ -330,7 +406,8 @@ export default function LoginPage() {
                       onChange={(e) => setForm({ ...form, displayName: e.target.value })}
                       placeholder="Your full name"
                       required
-                      className="w-full px-4 py-3 rounded-2xl bg-white/50 border border-transparent text-[#1b1c17] placeholder-[#71787f] text-sm outline-none focus:bg-white focus:border-[#2b6389] focus:shadow-[0_0_0_3px_rgba(43,99,137,0.12)] transition-all duration-200"
+                      className={`w-full px-4 py-3 rounded-2xl bg-white/50 border text-[#1b1c17] placeholder-[#71787f] text-sm outline-none focus:bg-white focus:shadow-[0_0_0_3px_rgba(43,99,137,0.12)] transition-all duration-200 ${fieldErrors.displayName ? "border-[#ba1a1a]" : "border-transparent focus:border-[#2b6389]"
+                        }`}
                     />
                     {fieldErrors.displayName && <p className="text-[#ba1a1a] text-xs mt-1">{fieldErrors.displayName}</p>}
                   </div>
@@ -352,42 +429,44 @@ export default function LoginPage() {
                   {fieldErrors.email && <p className="text-[#ba1a1a] text-xs mt-1">{fieldErrors.email}</p>}
                 </div>
 
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="block text-xs font-semibold text-[#41474e] uppercase tracking-wide">
-                      Password
-                    </label>
-                    {mode === "login" && (
-                      <a href="#" className="text-xs font-semibold text-[#2b6389] hover:underline">
-                        Forgot password?
-                      </a>
-                    )}
-                  </div>
-                  <div className="relative">
-                    <input
-                      type={showPassword ? "text" : "password"}
-                      value={form.password}
-                      onChange={(e) => setForm({ ...form, password: e.target.value })}
-                      placeholder={mode === "register" ? "At least 8 characters" : "Your password"}
-                      required
-                      className={`w-full px-4 py-3 pr-11 rounded-2xl bg-white/50 border text-[#1b1c17] placeholder-[#71787f] text-sm outline-none focus:bg-white focus:shadow-[0_0_0_3px_rgba(43,99,137,0.12)] transition-all duration-200 ${fieldErrors.password ? "border-[#ba1a1a]" : "border-transparent focus:border-[#2b6389]"
-                        }`}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword((v) => !v)}
-                      tabIndex={-1}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-[#71787f] hover:text-[#2b6389] transition-colors"
-                    >
-                      {showPassword ? (
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M3 3l18 18M10.6 10.6a2 2 0 002.8 2.8M9.5 5.4A10.4 10.4 0 0112 5c5 0 9 4 10 7-0.4 1.2-1.2 2.6-2.3 3.8M6.3 6.5C4.4 7.8 3 9.6 2 12c1 3 5 7 10 7 1.3 0 2.5-.2 3.6-.6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
-                      ) : (
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7z" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /><circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.6" /></svg>
+                {(mode === "login" || mode === "register") && (
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="block text-xs font-semibold text-[#41474e] uppercase tracking-wide">
+                        Password
+                      </label>
+                      {mode === "login" && (
+                        <button
+                          type="button"
+                          onClick={() => switchMode("forgot")}
+                          className="text-xs font-semibold text-[#2b6389] hover:underline"
+                        >
+                          Forgot password?
+                        </button>
                       )}
-                    </button>
+                    </div>
+                    <div className="relative">
+                      <input
+                        type={showPassword ? "text" : "password"}
+                        value={form.password}
+                        onChange={(e) => setForm({ ...form, password: e.target.value })}
+                        placeholder={mode === "register" ? "At least 8 characters" : "Your password"}
+                        required
+                        className={`w-full px-4 py-3 pr-11 rounded-2xl bg-white/50 border text-[#1b1c17] placeholder-[#71787f] text-sm outline-none focus:bg-white focus:shadow-[0_0_0_3px_rgba(43,99,137,0.12)] transition-all duration-200 ${fieldErrors.password ? "border-[#ba1a1a]" : "border-transparent focus:border-[#2b6389]"
+                          }`}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword((v) => !v)}
+                        tabIndex={-1}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-[#71787f] hover:text-[#2b6389] transition-colors"
+                      >
+                        {showPassword ? EYE_CLOSED : EYE_OPEN}
+                      </button>
+                    </div>
+                    {fieldErrors.password && <p className="text-[#ba1a1a] text-xs mt-1">{fieldErrors.password}</p>}
                   </div>
-                  {fieldErrors.password && <p className="text-[#ba1a1a] text-xs mt-1">{fieldErrors.password}</p>}
-                </div>
+                )}
 
                 {mode === "register" && (
                   <div>
@@ -410,15 +489,67 @@ export default function LoginPage() {
                         tabIndex={-1}
                         className="absolute right-3 top-1/2 -translate-y-1/2 text-[#71787f] hover:text-[#2b6389] transition-colors"
                       >
-                        {showConfirmPassword ? (
-                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M3 3l18 18M10.6 10.6a2 2 0 002.8 2.8M9.5 5.4A10.4 10.4 0 0112 5c5 0 9 4 10 7-0.4 1.2-1.2 2.6-2.3 3.8M6.3 6.5C4.4 7.8 3 9.6 2 12c1 3 5 7 10 7 1.3 0 2.5-.2 3.6-.6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
-                        ) : (
-                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7z" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /><circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.6" /></svg>
-                        )}
+                        {showConfirmPassword ? EYE_CLOSED : EYE_OPEN}
                       </button>
                     </div>
                     {fieldErrors.confirmPassword && <p className="text-[#ba1a1a] text-xs mt-1">{fieldErrors.confirmPassword}</p>}
                   </div>
+                )}
+
+                {mode === "forgot" && (
+                  <>
+                    <div>
+                      <label className="block text-xs font-semibold text-[#41474e] mb-1.5 uppercase tracking-wide">
+                        New Password
+                      </label>
+                      <div className="relative">
+                        <input
+                          type={showNewPassword ? "text" : "password"}
+                          value={form.newPassword}
+                          onChange={(e) => setForm({ ...form, newPassword: e.target.value })}
+                          placeholder="At least 8 characters"
+                          required
+                          className={`w-full px-4 py-3 pr-11 rounded-2xl bg-white/50 border text-[#1b1c17] placeholder-[#71787f] text-sm outline-none focus:bg-white focus:shadow-[0_0_0_3px_rgba(43,99,137,0.12)] transition-all duration-200 ${fieldErrors.newPassword ? "border-[#ba1a1a]" : "border-transparent focus:border-[#2b6389]"
+                            }`}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowNewPassword((v) => !v)}
+                          tabIndex={-1}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-[#71787f] hover:text-[#2b6389] transition-colors"
+                        >
+                          {showNewPassword ? EYE_CLOSED : EYE_OPEN}
+                        </button>
+                      </div>
+                      {fieldErrors.newPassword && <p className="text-[#ba1a1a] text-xs mt-1">{fieldErrors.newPassword}</p>}
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-[#41474e] mb-1.5 uppercase tracking-wide">
+                        Confirm New Password
+                      </label>
+                      <div className="relative">
+                        <input
+                          type={showConfirmNewPassword ? "text" : "password"}
+                          value={form.confirmNewPassword}
+                          onChange={(e) => setForm({ ...form, confirmNewPassword: e.target.value })}
+                          placeholder="Re-enter new password"
+                          required
+                          className={`w-full px-4 py-3 pr-11 rounded-2xl bg-white/50 border text-[#1b1c17] placeholder-[#71787f] text-sm outline-none focus:bg-white focus:shadow-[0_0_0_3px_rgba(43,99,137,0.12)] transition-all duration-200 ${fieldErrors.confirmNewPassword ? "border-[#ba1a1a]" : "border-transparent focus:border-[#2b6389]"
+                            }`}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowConfirmNewPassword((v) => !v)}
+                          tabIndex={-1}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-[#71787f] hover:text-[#2b6389] transition-colors"
+                        >
+                          {showConfirmNewPassword ? EYE_CLOSED : EYE_OPEN}
+                        </button>
+                      </div>
+                      {fieldErrors.confirmNewPassword && <p className="text-[#ba1a1a] text-xs mt-1">{fieldErrors.confirmNewPassword}</p>}
+                    </div>
+                  </>
                 )}
 
                 {error && (
@@ -433,9 +564,19 @@ export default function LoginPage() {
                   className="login-btn-gradient w-full py-3.5 rounded-full text-white font-semibold text-sm mt-1 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   {loading
-                    ? mode === "login" ? "Signing in…" : "Creating account…"
-                    : mode === "login" ? "Sign In →" : "Create Account →"}
+                    ? mode === "login" ? "Signing in…" : mode === "register" ? "Creating account…" : "Updating password…"
+                    : mode === "login" ? "Sign In →" : mode === "register" ? "Create Account →" : "Update Password →"}
                 </button>
+
+                {mode === "forgot" && (
+                  <button
+                    type="button"
+                    onClick={() => switchMode("login")}
+                    className="text-center text-sm font-semibold text-[#2b6389] hover:underline -mt-1"
+                  >
+                    ← Back to Sign In
+                  </button>
+                )}
               </form>
 
               <p className="text-center text-xs text-[#71787f]">
