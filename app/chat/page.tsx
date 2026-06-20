@@ -2,12 +2,34 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+
+interface ToolEvent {
+  id: string;
+  name: string;
+  round: number;
+  arguments?: any;
+  result?: any;
+  isError?: boolean;
+  status: "calling" | "done";
+}
+
+interface UsageEvent {
+  round: number;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+}
 
 interface Message {
   messageId: string;
   role: "user" | "assistant";
   content: string;
   timestamp: string;
+  streaming?: boolean;
+  tools?: ToolEvent[];
+  usage?: UsageEvent[];
 }
 
 interface Session {
@@ -33,10 +55,20 @@ export default function ChatPage() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [user, setUser] = useState<UserProfile | null>(null);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [traceOpenFor, setTraceOpenFor] = useState<string | null>(null);
+  const [selectedTraceNode, setSelectedTraceNode] = useState<string | null>(null);
+  const [sessionMenuFor, setSessionMenuFor] = useState<string | null>(null);
+  const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<Session | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const bgCanvasRef = useRef<HTMLCanvasElement>(null);
+  const sessionMenuRef = useRef<HTMLDivElement>(null);
+  const renameInputRef = useRef<HTMLInputElement>(null);
+  const traceAsideRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { loadSessions(); loadUser(); }, []);
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
@@ -46,10 +78,20 @@ export default function ChatPage() {
       if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
         setUserMenuOpen(false);
       }
+      if (sessionMenuRef.current && !sessionMenuRef.current.contains(e.target as Node)) {
+        setSessionMenuFor(null);
+      }
+      if (traceAsideRef.current && !traceAsideRef.current.contains(e.target as Node)) {
+        setTraceOpenFor(null);
+      }
     }
     document.addEventListener("mousedown", onClickOutside);
     return () => document.removeEventListener("mousedown", onClickOutside);
   }, []);
+
+  useEffect(() => {
+    if (renamingSessionId) renameInputRef.current?.focus();
+  }, [renamingSessionId]);
 
   const loadUser = async () => {
     const res = await fetch("/api/auth/me");
@@ -146,8 +188,17 @@ export default function ChatPage() {
     };
   }, []);
 
+  const apiFetch = async (url: string, opts: RequestInit = {}) => {
+    let res = await fetch(url, opts);
+    if (res.status === 401) {
+      const r = await fetch("/api/auth/refresh", { method: "POST" });
+      if (r.ok) res = await fetch(url, opts);
+    }
+    return res;
+  };
+
   const loadSessions = async () => {
-    const res = await fetch("/api/sessions");
+    const res = await apiFetch("/api/sessions");
     if (res.status === 401) { router.push("/login"); return; }
     const data = await res.json();
     setSessions(data.sessions || []);
@@ -156,7 +207,8 @@ export default function ChatPage() {
   const loadMessages = async (sessionId: string) => {
     setLoadingMessages(true);
     setActiveSessionId(sessionId);
-    const res = await fetch(`/api/chat?sessionId=${sessionId}`);
+    setSessionMenuFor(null);
+    const res = await apiFetch(`/api/chat?sessionId=${sessionId}`);
     if (res.ok) {
       const data = await res.json();
       setMessages(data.messages || []);
@@ -170,9 +222,13 @@ export default function ChatPage() {
     setInput("");
   };
 
+  // ── Send a message and consume the live SSE stream from /api/chat ─────────
+  const sendingRef = useRef(false);
+
   const handleSend = async () => {
     const trimmed = input.trim();
-    if (!trimmed || sending) return;
+    if (!trimmed || sendingRef.current) return;
+    sendingRef.current = true;
 
     setMessages((prev) => [...prev, {
       messageId: "temp-" + Date.now(),
@@ -182,40 +238,109 @@ export default function ChatPage() {
     }]);
     setInput("");
     setSending(true);
+    if (textareaRef.current) textareaRef.current.style.height = "auto";
+
+    const assistantId = "stream-" + Date.now();
+    setMessages((prev) => [...prev, {
+      messageId: assistantId,
+      role: "assistant",
+      content: "",
+      timestamp: new Date().toISOString(),
+      streaming: true,
+      tools: [],
+      usage: [],
+    }]);
 
     try {
-      const res = await fetch("/api/chat", {
+      const res = await apiFetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: trimmed, sessionId: activeSessionId }),
       });
 
       if (res.status === 401) { router.push("/login"); return; }
-      const data = await res.json();
 
-      if (!res.ok) {
-        setMessages((prev) => [...prev, {
-          messageId: "err-" + Date.now(),
-          role: "assistant",
-          content: data.error || "Something went wrong. Please try again.",
-          timestamp: new Date().toISOString(),
-        }]);
+      if (!res.ok || !res.body) {
+        let errMsg = "Something went wrong. Please try again.";
+        try { errMsg = (await res.json()).error || errMsg; } catch { }
+        setMessages((prev) => prev.map((m) =>
+          m.messageId === assistantId ? { ...m, content: errMsg, streaming: false } : m
+        ));
         return;
       }
 
-      if (!activeSessionId) {
-        setActiveSessionId(data.sessionId);
-        loadSessions();
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let newSessionId: string | null = null;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          const trimmedLine = line.trim();
+          if (!trimmedLine.startsWith("data:")) continue;
+          let evt: any;
+          try {
+            evt = JSON.parse(trimmedLine.slice(5).trim());
+          } catch {
+            continue;
+          }
+
+          if (evt.type === "session") {
+            newSessionId = evt.sessionId;
+          } else if (evt.type === "token") {
+            setMessages((prev) => prev.map((m) =>
+              m.messageId === assistantId ? { ...m, content: m.content + evt.delta } : m
+            ));
+          } else if (evt.type === "tool_call") {
+            setMessages((prev) => prev.map((m) => {
+              if (m.messageId !== assistantId) return m;
+              const tools = [...(m.tools || []), {
+                id: evt.id, name: evt.name, round: evt.round, arguments: evt.arguments, status: "calling" as const,
+              }];
+              return { ...m, tools };
+            }));
+          } else if (evt.type === "tool_result") {
+            setMessages((prev) => prev.map((m) => {
+              if (m.messageId !== assistantId) return m;
+              const tools = (m.tools || []).map((t) =>
+                t.id === evt.id ? { ...t, result: evt.result, isError: evt.isError, status: "done" as const } : t
+              );
+              return { ...m, tools };
+            }));
+          } else if (evt.type === "usage") {
+            setMessages((prev) => prev.map((m) =>
+              m.messageId === assistantId
+                ? { ...m, usage: [...(m.usage || []), { round: evt.round, promptTokens: evt.promptTokens, completionTokens: evt.completionTokens, totalTokens: evt.totalTokens }] }
+                : m
+            ));
+          } else if (evt.type === "done") {
+            setMessages((prev) => prev.map((m) =>
+              m.messageId === assistantId ? { ...m, content: evt.content, streaming: false } : m
+            ));
+          }
+        }
       }
 
-      setMessages((prev) => [...prev, {
-        messageId: "reply-" + Date.now(),
-        role: "assistant",
-        content: data.reply,
-        timestamp: new Date().toISOString(),
-      }]);
+      if (newSessionId && !activeSessionId) {
+        setActiveSessionId(newSessionId);
+        loadSessions();
+      } else if (activeSessionId) {
+        loadSessions();
+      }
+    } catch (err) {
+      setMessages((prev) => prev.map((m) =>
+        m.messageId === assistantId ? { ...m, content: "Connection lost. Please try again.", streaming: false } : m
+      ));
     } finally {
       setSending(false);
+      sendingRef.current = false;
       textareaRef.current?.focus();
     }
   };
@@ -227,6 +352,48 @@ export default function ChatPage() {
   const handleLogout = async () => {
     await fetch("/api/auth/logout", { method: "POST" });
     router.push("/login");
+  };
+
+  const handleCopy = async (id: string, text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedId(id);
+      setTimeout(() => setCopiedId((cur) => (cur === id ? null : cur)), 1500);
+    } catch {
+      // Clipboard API blocked (e.g. insecure context) — silently ignore
+    }
+  };
+
+  const startRename = (s: Session) => {
+    setRenamingSessionId(s.sessionId);
+    setRenameValue(s.title);
+    setSessionMenuFor(null);
+  };
+
+  const commitRename = async (sessionId: string) => {
+    const trimmed = renameValue.trim();
+    setRenamingSessionId(null);
+    if (!trimmed) return;
+
+    setSessions((prev) => prev.map((s) => (s.sessionId === sessionId ? { ...s, title: trimmed } : s)));
+
+    const res = await apiFetch(`/api/sessions/${sessionId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: trimmed }),
+    });
+    if (!res.ok) loadSessions(); // revert to server truth on failure
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    const { sessionId } = deleteTarget;
+    setDeleteTarget(null);
+    setSessions((prev) => prev.filter((s) => s.sessionId !== sessionId));
+    if (activeSessionId === sessionId) startNewChat();
+
+    const res = await apiFetch(`/api/sessions/${sessionId}`, { method: "DELETE" });
+    if (!res.ok) loadSessions();
   };
 
   const formatTime = (iso: string) =>
@@ -241,6 +408,9 @@ export default function ChatPage() {
     if (d.toDateString() === yesterday.toDateString()) return "Yesterday";
     return d.toLocaleDateString([], { month: "short", day: "numeric" });
   };
+
+  const totalTokensFor = (m: Message) =>
+    (m.usage || []).reduce((sum, u) => sum + u.totalTokens, 0);
 
   return (
     <div className="flex h-screen bg-[#f0f3ff] overflow-hidden" style={{ fontFamily: "'Manrope', sans-serif" }}>
@@ -277,15 +447,72 @@ export default function ChatPage() {
             <p className="text-[#71787f] text-xs text-center mt-8 px-4">Your conversations will appear here.</p>
           ) : (
             sessions.map((s) => (
-              <button
-                key={s.sessionId}
-                onClick={() => loadMessages(s.sessionId)}
-                className={`w-full text-left px-3 py-3 rounded-xl mb-1 transition-all duration-150 ${activeSessionId === s.sessionId ? "bg-[#e7eeff] text-[#2b6389]" : "text-[#41474e] hover:bg-[#f0f3ff]"
-                  }`}
-              >
-                <p className="text-sm font-medium truncate">{s.title}</p>
-                <p className="text-xs text-[#71787f] mt-0.5">{formatDate(s.lastUpdated)}</p>
-              </button>
+              <div key={s.sessionId} className="relative group">
+                {renamingSessionId === s.sessionId ? (
+                  <div className="px-3 py-2 mb-1">
+                    <input
+                      ref={renameInputRef}
+                      value={renameValue}
+                      onChange={(e) => setRenameValue(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") { e.preventDefault(); commitRename(s.sessionId); }
+                        if (e.key === "Escape") setRenamingSessionId(null);
+                      }}
+                      onBlur={() => commitRename(s.sessionId)}
+                      maxLength={100}
+                      className="w-full px-2.5 py-1.5 rounded-lg border border-[#2b6389] bg-white text-sm text-[#121c2c] outline-none focus:shadow-[0_0_0_3px_rgba(43,99,137,0.12)]"
+                    />
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => loadMessages(s.sessionId)}
+                    className={`w-full text-left px-3 py-3 pr-9 rounded-xl mb-1 transition-all duration-150 ${activeSessionId === s.sessionId ? "bg-[#e7eeff] text-[#2b6389]" : "text-[#41474e] hover:bg-[#f0f3ff]"
+                      }`}
+                  >
+                    <p className="text-sm font-medium truncate">{s.title}</p>
+                    <p className="text-xs text-[#71787f] mt-0.5">{formatDate(s.lastUpdated)}</p>
+                  </button>
+                )}
+
+                {renamingSessionId !== s.sessionId && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setSessionMenuFor(sessionMenuFor === s.sessionId ? null : s.sessionId); }}
+                    className={`absolute right-1.5 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-[#71787f] hover:bg-[#dee8ff] hover:text-[#2b6389] transition-all duration-150 ${sessionMenuFor === s.sessionId ? "opacity-100 bg-[#dee8ff]" : "opacity-0 group-hover:opacity-100"}`}
+                  >
+                    <svg width="14" height="14" fill="none" viewBox="0 0 16 16">
+                      <circle cx="8" cy="3.2" r="1.3" fill="currentColor" />
+                      <circle cx="8" cy="8" r="1.3" fill="currentColor" />
+                      <circle cx="8" cy="12.8" r="1.3" fill="currentColor" />
+                    </svg>
+                  </button>
+                )}
+
+                {sessionMenuFor === s.sessionId && (
+                  <div
+                    ref={sessionMenuRef}
+                    className="absolute right-1 top-10 z-20 w-36 bg-white rounded-xl border border-[#e7eeff] shadow-lg shadow-[#2b6389]/15 overflow-hidden"
+                  >
+                    <button
+                      onClick={() => startRename(s)}
+                      className="w-full flex items-center gap-2 px-3.5 py-2.5 text-sm text-[#121c2c] hover:bg-[#f0f3ff] transition-colors"
+                    >
+                      <svg width="14" height="14" fill="none" viewBox="0 0 16 16">
+                        <path d="M11.3 2.3a1.5 1.5 0 0 1 2.1 2.1L5.5 12.3l-3 .7.7-3 8.1-8.1z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+                      </svg>
+                      Rename
+                    </button>
+                    <button
+                      onClick={() => { setDeleteTarget(s); setSessionMenuFor(null); }}
+                      className="w-full flex items-center gap-2 px-3.5 py-2.5 text-sm text-[#ba1a1a] hover:bg-[#ffdad6]/40 transition-colors"
+                    >
+                      <svg width="14" height="14" fill="none" viewBox="0 0 16 16">
+                        <path d="M3 4.5h10M6 4.5V3a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v1.5M4.5 4.5l.6 8.4a1 1 0 0 0 1 .9h3.8a1 1 0 0 0 1-.9l.6-8.4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                      Delete
+                    </button>
+                  </div>
+                )}
+              </div>
             ))
           )}
         </div>
@@ -333,7 +560,7 @@ export default function ChatPage() {
               <path d="M2 4.5h14M2 9h14M2 13.5h14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
             </svg>
           </button>
-          <h2 className="font-semibold text-[#121c2c] text-sm" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+          <h2 className="font-semibold text-[#121c2c] text-sm truncate" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
             {activeSessionId ? (sessions.find((s) => s.sessionId === activeSessionId)?.title || "Chat") : "New Conversation"}
           </h2>
         </header>
@@ -373,42 +600,94 @@ export default function ChatPage() {
             </div>
           ) : (
             <div className="max-w-3xl mx-auto space-y-4">
-              {messages.map((msg) => (
-                <div key={msg.messageId} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-                  {msg.role === "assistant" && (
-                    <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-[#2b6389] to-[#466272] flex items-center justify-center mr-2 mt-1 flex-shrink-0">
-                      <svg width="14" height="14" viewBox="0 0 28 28" fill="none">
-                        <path d="M6 8h16M6 14h10" stroke="white" strokeWidth="2.5" strokeLinecap="round" />
-                      </svg>
+              {messages.map((msg) => {
+                const isUser = msg.role === "user";
+                const hasTools = (msg.tools || []).length > 0;
+                const tokens = totalTokensFor(msg);
+                const liveCallingTool = (msg.tools || []).find((t) => t.status === "calling");
+
+                return (
+                  <div key={msg.messageId} className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
+                    {!isUser && (
+                      <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-[#2b6389] to-[#466272] flex items-center justify-center mr-2 mt-1 flex-shrink-0">
+                        <svg width="14" height="14" viewBox="0 0 28 28" fill="none">
+                          <path d="M6 8h16M6 14h10" stroke="white" strokeWidth="2.5" strokeLinecap="round" />
+                        </svg>
+                      </div>
+                    )}
+
+                    <div className={`group max-w-[78%] min-w-0 ${isUser ? "items-end" : "items-start"} flex flex-col`}>
+                      <div className={`px-4 py-3 rounded-2xl text-sm leading-relaxed ${isUser
+                        ? "bg-gradient-to-br from-[#2b6389] to-[#466272] text-white rounded-br-sm"
+                        : "bg-white/80 backdrop-blur text-[#121c2c] border border-[#dee8ff] rounded-bl-sm shadow-sm"
+                        }`}>
+
+                        {/* Live tool-call status line, real-time while streaming */}
+                        {!isUser && liveCallingTool && (
+                          <div className="flex items-center gap-2 mb-2 text-xs text-[#2b6389] font-medium">
+                            <span className="sp-thinking-dot" />
+                            Calling <code className="px-1.5 py-0.5 rounded bg-[#2b6389]/10">{liveCallingTool.name}</code>…
+                          </div>
+                        )}
+
+                        {isUser ? (
+                          <p className="whitespace-pre-wrap">{msg.content}</p>
+                        ) : msg.streaming && !msg.content ? (
+                          <div className="flex gap-1.5 items-center h-5">
+                            <span className="sp-thinking-dot" style={{ animationDelay: "0ms" }} />
+                            <span className="sp-thinking-dot" style={{ animationDelay: "200ms" }} />
+                            <span className="sp-thinking-dot" style={{ animationDelay: "400ms" }} />
+                          </div>
+                        ) : (
+                          <div className="sp-markdown">
+                            <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+                            {msg.streaming && <span className="sp-cursor" />}
+                          </div>
+                        )}
+
+                        <p className={`text-xs mt-1.5 ${isUser ? "text-[#98ccf8]" : "text-[#71787f]"}`}>
+                          {formatTime(msg.timestamp)}
+                        </p>
+                      </div>
+
+                      {/* Action row: copy + tokens/traces (assistant only), shown on hover */}
+                      <div className={`flex items-center gap-1 mt-1 px-1 transition-opacity duration-150 ${isUser ? "opacity-0 group-hover:opacity-100" : ""} ${!isUser && msg.streaming ? "opacity-0" : ""}`}>
+                        <button
+                          onClick={() => handleCopy(msg.messageId, msg.content)}
+                          title="Copy"
+                          className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs text-[#71787f] hover:bg-[#e7eeff] hover:text-[#2b6389] transition-colors opacity-0 group-hover:opacity-100"
+                        >
+                          {copiedId === msg.messageId ? (
+                            <>
+                              <svg width="12" height="12" fill="none" viewBox="0 0 16 16"><path d="M3 8.5l3.5 3.5L13 5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                              Copied
+                            </>
+                          ) : (
+                            <>
+                              <svg width="12" height="12" fill="none" viewBox="0 0 16 16"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5" stroke="currentColor" strokeWidth="1.3" /><path d="M3 10.5V3.5A1.5 1.5 0 0 1 4.5 2h7" stroke="currentColor" strokeWidth="1.3" /></svg>
+                              Copy
+                            </>
+                          )}
+                        </button>
+
+                        {!isUser && !msg.streaming && (hasTools || tokens > 0) && (
+                          <>
+                            <span className="text-[#dee8ff]">·</span>
+                            <button
+                              onClick={() => { setTraceOpenFor(msg.messageId); setSelectedTraceNode(null); }}
+                              className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs text-[#71787f] hover:bg-[#e7eeff] hover:text-[#2b6389] transition-colors opacity-0 group-hover:opacity-100"
+                            >
+                              <svg width="12" height="12" fill="none" viewBox="0 0 16 16"><path d="M8 1.5v3M8 11.5v3M2.5 8h3M10.5 8h3M4 4l2 2M12 4l-2 2M4 12l2-2M12 12l-2-2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" /></svg>
+                              {tokens > 0 ? `${tokens}t` : ""} {hasTools ? `· ${msg.tools!.length} tool${msg.tools!.length > 1 ? "s" : ""}` : ""}
+                              View trace
+                            </button>
+                          </>
+                        )}
+                      </div>
                     </div>
-                  )}
-                  <div className={`max-w-[75%] px-4 py-3 rounded-2xl text-sm leading-relaxed ${msg.role === "user"
-                    ? "bg-gradient-to-br from-[#2b6389] to-[#466272] text-white rounded-br-sm"
-                    : "bg-white/80 backdrop-blur text-[#121c2c] border border-[#dee8ff] rounded-bl-sm shadow-sm"
-                    }`}>
-                    <p className="whitespace-pre-wrap">{msg.content}</p>
-                    <p className={`text-xs mt-1.5 ${msg.role === "user" ? "text-[#98ccf8]" : "text-[#71787f]"}`}>
-                      {formatTime(msg.timestamp)}
-                    </p>
                   </div>
-                </div>
-              ))}
-              {sending && (
-                <div className="flex justify-start">
-                  <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-[#2b6389] to-[#466272] flex items-center justify-center mr-2 mt-1 flex-shrink-0">
-                    <svg width="14" height="14" viewBox="0 0 28 28" fill="none">
-                      <path d="M6 8h16M6 14h10" stroke="white" strokeWidth="2.5" strokeLinecap="round" />
-                    </svg>
-                  </div>
-                  <div className="bg-white/80 border border-[#dee8ff] rounded-2xl rounded-bl-sm px-4 py-3 shadow-sm">
-                    <div className="flex gap-1.5 items-center h-4">
-                      <div className="w-1.5 h-1.5 bg-[#2b6389] rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
-                      <div className="w-1.5 h-1.5 bg-[#2b6389] rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
-                      <div className="w-1.5 h-1.5 bg-[#2b6389] rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
-                    </div>
-                  </div>
-                </div>
-              )}
+                );
+              })}
               <div ref={messagesEndRef} />
             </div>
           )}
@@ -448,6 +727,173 @@ export default function ChatPage() {
           </div>
         </div>
       </div>
+
+      {traceOpenFor && (() => {
+        const traceMsg = messages.find((m) => m.messageId === traceOpenFor);
+        if (!traceMsg) return null;
+        const tools = traceMsg.tools || [];
+        const usage = traceMsg.usage || [];
+        const totalTokens = usage.reduce((s, u) => s + u.totalTokens, 0);
+
+        type Node = { id: string; kind: "input" | "tool" | "response"; label: string; sub: string; status: "done" | "error" | "running" };
+        const nodes: Node[] = [
+          { id: "__input", kind: "input", label: "Conversation", sub: "User message", status: "done" },
+          ...tools.map((t) => ({
+            id: t.id,
+            kind: "tool" as const,
+            label: t.name,
+            sub: `round ${t.round + 1}`,
+            status: t.status === "calling" ? ("running" as const) : t.isError ? ("error" as const) : ("done" as const),
+          })),
+          { id: "__output", kind: "response", label: "Response", sub: `${traceMsg.streaming ? "generating…" : "completed"}`, status: traceMsg.streaming ? "running" : "done" },
+        ];
+
+        const selected = selectedTraceNode || "__output";
+        const selectedTool = tools.find((t) => t.id === selected);
+
+        return (
+          <aside
+            ref={traceAsideRef}
+            className="fixed top-0 right-0 h-full w-full sm:w-[440px] bg-white/95 backdrop-blur-xl border-l border-[#2b6389]/15 shadow-[-12px_0_40px_rgba(43,99,137,0.12)] z-50 flex flex-col animate-in"
+          >
+            <div className="flex items-center justify-between px-5 py-4 border-b border-[#e7eeff] flex-shrink-0">
+              <div>
+                <p className="text-sm font-bold text-[#121c2c]" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>Trace</p>
+                <p className="text-xs text-[#71787f] mt-0.5">
+                  {traceMsg.streaming ? "Running" : "Completed"} · {totalTokens > 0 ? `${totalTokens} tokens` : "—"}
+                </p>
+              </div>
+              <button
+                onClick={() => setTraceOpenFor(null)}
+                className="p-2 rounded-lg text-[#71787f] hover:bg-[#e7eeff] hover:text-[#2b6389] transition-colors"
+              >
+                <svg width="16" height="16" fill="none" viewBox="0 0 16 16"><path d="M3 3l10 10M13 3L3 13" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>
+              </button>
+            </div>
+
+            <div className="px-3 py-4 border-b border-[#e7eeff] overflow-y-auto flex-shrink-0 max-h-[42%]">
+              <div className="relative pl-4">
+                <div className="absolute left-[7px] top-2 bottom-2 w-px bg-[#dee8ff]" />
+                {nodes.map((n, i) => {
+                  const isSelected = selected === n.id;
+                  const dotColor = n.status === "running" ? "bg-[#98ccf8]" : n.status === "error" ? "bg-[#ba1a1a]" : "bg-[#4ade80]";
+                  return (
+                    <button
+                      key={n.id}
+                      onClick={() => setSelectedTraceNode(n.id)}
+                      className={`sp-trace-row relative w-full flex items-center gap-3 text-left mb-1 px-3 py-2.5 rounded-lg transition-colors ${isSelected ? "bg-[#2b6389]/10 border border-[#2b6389]/30" : "hover:bg-[#f0f3ff] border border-transparent"}`}
+                    >
+                      <span className={`absolute -left-[13px] w-2.5 h-2.5 rounded-full ring-4 ring-white flex-shrink-0 ${dotColor} ${n.status === "running" ? "animate-pulse" : ""}`} />
+                      <span className={`flex-shrink-0 w-6 h-6 rounded-md flex items-center justify-center text-[10px] font-bold ${n.kind === "tool" ? "bg-[#98ccf8]/20 text-[#2b6389]" : "bg-[#e7eeff] text-[#121c2c]"}`}>
+                        {n.kind === "input" ? "U" : n.kind === "response" ? "A" : "T"}
+                      </span>
+                      <span className="flex-1 min-w-0">
+                        <span className="block text-sm font-medium text-[#121c2c] truncate">{n.kind === "tool" ? <code>{n.label}</code> : n.label}</span>
+                        <span className="block text-[11px] text-[#71787f]">{n.sub}</span>
+                      </span>
+                      {i < nodes.length - 1 && (
+                        <svg width="10" height="10" fill="none" viewBox="0 0 16 16" className="text-[#71787f]/50 flex-shrink-0"><path d="M6 3l6 5-6 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-5 py-4">
+              {selected === "__input" && (
+                <>
+                  <p className="text-xs font-semibold text-[#466272] uppercase tracking-wide mb-2">User input</p>
+                  <div className="bg-[#f0f3ff] border border-[#dee8ff] rounded-xl px-3.5 py-3">
+                    <p className="text-sm text-[#121c2c] whitespace-pre-wrap break-words">{messages.find((m) => m.role === "user" && messages.indexOf(m) === messages.indexOf(traceMsg) - 1)?.content || "—"}</p>
+                  </div>
+                </>
+              )}
+
+              {selected === "__output" && (
+                <>
+                  <p className="text-xs font-semibold text-[#466272] uppercase tracking-wide mb-2">Agent output</p>
+                  <div className="bg-[#f0f3ff] border border-[#dee8ff] rounded-xl px-3.5 py-3 mb-4">
+                    <div className="sp-markdown text-sm text-[#121c2c]">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{traceMsg.content || "_(empty)_"}</ReactMarkdown>
+                    </div>
+                  </div>
+                  {usage.length > 0 && (
+                    <>
+                      <p className="text-xs font-semibold text-[#466272] uppercase tracking-wide mb-2">Token usage</p>
+                      <div className="space-y-1.5">
+                        {usage.map((u, i) => (
+                          <div key={i} className="flex items-center justify-between text-xs text-[#41474e] bg-[#f0f3ff] border border-[#dee8ff] rounded-lg px-3 py-2">
+                            <span>Round {u.round + 1}</span>
+                            <span className="font-mono">{u.promptTokens}p + {u.completionTokens}c = <span className="text-[#2b6389] font-semibold">{u.totalTokens}t</span></span>
+                          </div>
+                        ))}
+                        <div className="flex items-center justify-between text-xs text-[#121c2c] bg-[#2b6389]/10 border border-[#2b6389]/30 rounded-lg px-3 py-2 font-semibold">
+                          <span>Total</span>
+                          <span className="font-mono text-[#2b6389]">{totalTokens}t</span>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </>
+              )}
+
+              {selectedTool && (
+                <>
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className={`w-2 h-2 rounded-full ${selectedTool.status === "calling" ? "bg-[#98ccf8] animate-pulse" : selectedTool.isError ? "bg-[#ba1a1a]" : "bg-[#4ade80]"}`} />
+                    <code className="text-sm font-semibold text-[#2b6389]">{selectedTool.name}</code>
+                    <span className="text-[11px] text-[#71787f] ml-auto">round {selectedTool.round + 1}</span>
+                  </div>
+
+                  <p className="text-xs font-semibold text-[#466272] uppercase tracking-wide mb-2">Input</p>
+                  <pre className="text-[12px] text-[#121c2c] whitespace-pre-wrap break-all font-mono leading-relaxed bg-[#f0f3ff] border border-[#dee8ff] rounded-xl px-3.5 py-3 mb-4">{JSON.stringify(selectedTool.arguments, null, 2)}</pre>
+
+                  {selectedTool.status === "done" ? (
+                    <>
+                      <p className="text-xs font-semibold text-[#466272] uppercase tracking-wide mb-2">{selectedTool.isError ? "Error" : "Output"}</p>
+                      <pre className={`text-[12px] whitespace-pre-wrap break-all font-mono leading-relaxed rounded-xl px-3.5 py-3 border ${selectedTool.isError ? "text-[#ba1a1a] bg-[#ffdad6]/40 border-[#ffb4ab]" : "text-[#41474e] bg-[#f0f3ff] border-[#dee8ff]"}`}>{JSON.stringify(selectedTool.result, null, 2)}</pre>
+                    </>
+                  ) : (
+                    <div className="flex items-center gap-2 text-xs text-[#2b6389]">
+                      <span className="sp-thinking-dot" />
+                      Running…
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </aside>
+        );
+      })()}
+
+      {/* Delete confirmation modal */}
+      {deleteTarget && (
+        <div className="fixed inset-0 bg-[#121c2c]/15 backdrop-blur-[1px] flex items-center justify-center z-50 px-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6">
+            <h3 className="font-bold text-[#121c2c] text-base mb-2" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+              Delete this chat?
+            </h3>
+            <p className="text-sm text-[#41474e] mb-5 leading-relaxed">
+              "{deleteTarget.title}" and all of its messages will be permanently deleted. This can't be undone.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setDeleteTarget(null)}
+                className="flex-1 px-4 py-2.5 rounded-xl border border-[#dee8ff] text-[#41474e] text-sm font-medium hover:bg-[#f0f3ff] transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDelete}
+                className="flex-1 px-4 py-2.5 rounded-xl bg-[#ba1a1a] text-white text-sm font-semibold hover:bg-[#a51616] transition-colors"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -14,6 +14,23 @@ export interface Session {
   lastUpdated: string;
 }
 
+export interface ToolEvent {
+  id: string;
+  name: string;
+  round: number;
+  arguments?: any;
+  result?: any;
+  isError?: boolean;
+  status: "calling" | "done";
+}
+
+export interface UsageEvent {
+  round: number;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+}
+
 export interface Message {
   messageId: string;
   sessionId: string;
@@ -21,6 +38,8 @@ export interface Message {
   role: "user" | "assistant";
   content: string;
   timestamp: string;
+  tools?: ToolEvent[];
+  usage?: UsageEvent[];
 }
 
 export interface RefreshToken {

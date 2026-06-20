@@ -7,8 +7,8 @@ import { useRouter } from "next/navigation";
 const FLOATING_CARDS = [
   { icon: "📄", label: "Quick Access", text: "Search Documents", top: "5%", left: "30%", duration: 10, tx: -20, ty: 15, rot: 3 },
   { icon: "📌", label: "Contextual Action", text: "Create Project Task", top: "35%", left: "8%", duration: 8, tx: 15, ty: -20, rot: -2 },
-  { icon: "📊", label: "AI Insight", text: "Generate Reports", top: "35%", right: "36%", duration: 9, tx: 25, ty: 10, rot: 1 },
-  { icon: "📋", label: "List Management", text: "Update SharePoint Lists", bottom: "20%", right: "35%", duration: 11, tx: -15, ty: -18, rot: -1.5 },
+  { icon: "📊", label: "AI Insight", text: "Generate Reports", top: "35%", right: "40%", duration: 9, tx: 25, ty: 10, rot: 1 },
+  { icon: "📋", label: "List Management", text: "Update SharePoint Lists", bottom: "20%", right: "39%", duration: 11, tx: -15, ty: -18, rot: -1.5 },
   { icon: "🤖", label: "AI Agent", text: "Ask SharePilot Anything", top: "62%", left: "4%", duration: 7.5, tx: 18, ty: 12, rot: 2 },
 ] as const;
 
@@ -302,12 +302,12 @@ export default function LoginPage() {
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
       `}</style>
 
-      <main className="relative h-screen w-full overflow-hidden bg-[#fbf9f1]" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+      <main className="relative min-h-screen w-full overflow-x-hidden" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
         {/* Aurora shader background */}
         <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" />
 
         {/* Floating context cards (hidden on small screens) */}
-        <div className="hidden md:block">
+        <div className="hidden lg:block">
           {FLOATING_CARDS.map((c, i) => (
             <div
               key={i}
@@ -334,9 +334,9 @@ export default function LoginPage() {
         </div>
 
         {/* Layout: orb takes ~2/3, login card docked right */}
-        <div className="relative z-10 flex flex-col lg:flex-row h-full w-full overflow-hidden">
+        <div className="relative z-10 flex flex-col lg:flex-row min-h-screen w-full">
           {/* Left/center 2/3 — Orb + branding */}
-          <div className="flex-1 lg:flex-[2] flex flex-col items-center justify-center px-6 py-8 overflow-hidden">
+          <div className="hidden lg:flex lg:flex-[2] flex-col items-center justify-center px-6 py-8">
             <div ref={orbWrapRef} className="orb-wrap cursor-pointer mb-6">
               <div className="relative w-[170px] h-[170px] flex items-center justify-center">
                 <div className="ring-1 orb-ring" />
