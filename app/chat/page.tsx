@@ -135,21 +135,47 @@ export default function ChatPage() {
       varying vec2 v_texCoord;
       void main() {
         vec2 uv = v_texCoord;
-        float t = u_time * 0.12;
-        vec2 p1 = vec2(0.5 + 0.35 * sin(t), 0.4 + 0.25 * cos(t * 0.9));
-        vec2 p2 = vec2(0.25 + 0.25 * cos(t * 0.7), 0.75 + 0.15 * sin(t * 1.0));
-        vec2 p3 = vec2(0.78 + 0.15 * sin(t * 1.2), 0.3 + 0.3 * cos(t * 0.8));
+        float t = u_time * 0.30;
+        
+        // 7 animated blobs covering the whole screen
+        vec2 p1 = vec2(0.15 + 0.18 * sin(t * 0.9),       0.15 + 0.15 * cos(t * 0.7));
+        vec2 p2 = vec2(0.80 + 0.15 * cos(t * 0.8),       0.25 + 0.20 * sin(t * 1.1));
+        vec2 p3 = vec2(0.50 + 0.30 * sin(t * 1.2 + 1.0), 0.55 + 0.25 * cos(t * 0.9));
+        vec2 p4 = vec2(0.20 + 0.15 * cos(t * 1.4),       0.75 + 0.18 * sin(t * 1.3));
+        vec2 p5 = vec2(0.75 + 0.18 * sin(t * 0.6 + 2.0), 0.80 + 0.15 * cos(t * 1.5));
+        vec2 p6 = vec2(0.55 + 0.20 * cos(t * 1.1 + 0.5), 0.20 + 0.18 * sin(t * 0.8));
+        vec2 p7 = vec2(0.35 + 0.22 * sin(t * 0.7 + 3.0), 0.45 + 0.20 * cos(t * 1.2));
+        
         float d1 = length(uv - p1);
         float d2 = length(uv - p2);
         float d3 = length(uv - p3);
-        vec3 bg = vec3(0.941, 0.953, 1.0);
-        vec3 glow = vec3(0.91, 0.95, 1.0);
-        vec3 sky = vec3(0.78, 0.88, 0.97);
-        vec3 accent = vec3(0.96, 0.93, 0.85);
+        float d4 = length(uv - p4);
+        float d5 = length(uv - p5);
+        float d6 = length(uv - p6);
+        float d7 = length(uv - p7);
+        
+        // Soft white-lavender base
+        vec3 bg = vec3(0.95, 0.94, 1.00);
+        
+        // Vivid violet, pink, indigo, rose, purple palette
+        vec3 violet  = vec3(0.69, 0.25, 1.00); // #b040ff
+        vec3 pink    = vec3(1.00, 0.31, 0.66); // #ff4fa8
+        vec3 indigo  = vec3(0.39, 0.40, 0.95); // #6466f3
+        vec3 rose    = vec3(0.96, 0.44, 0.71); // #f572b6
+        vec3 purple  = vec3(0.75, 0.52, 0.99); // #c084fc
+        vec3 coral   = vec3(0.98, 0.44, 0.52); // #fb7185
+        vec3 lavender= vec3(0.82, 0.68, 1.00); // #d1adff
+        
         vec3 color = bg;
-        color = mix(color, glow, smoothstep(0.8, 0.0, d1) * 0.5);
-        color = mix(color, sky, smoothstep(0.7, 0.0, d2) * 0.35);
-        color = mix(color, accent, smoothstep(0.6, 0.0, d3) * 0.25);
+        // Tighter smoothstep = more focused blob, higher mix = more saturated
+        color = mix(color, violet,   smoothstep(0.38, 0.0, d1) * 0.75);
+        color = mix(color, pink,     smoothstep(0.35, 0.0, d2) * 0.72);
+        color = mix(color, indigo,   smoothstep(0.40, 0.0, d3) * 0.68);
+        color = mix(color, rose,     smoothstep(0.32, 0.0, d4) * 0.70);
+        color = mix(color, purple,   smoothstep(0.42, 0.0, d5) * 0.65);
+        color = mix(color, coral,    smoothstep(0.30, 0.0, d6) * 0.72);
+        color = mix(color, lavender, smoothstep(0.45, 0.0, d7) * 0.60);
+        
         gl_FragColor = vec4(color, 1.0);
       }`;
 
@@ -413,10 +439,11 @@ export default function ChatPage() {
     (m.usage || []).reduce((sum, u) => sum + u.totalTokens, 0);
 
   return (
-    <div className="flex h-screen bg-[#f0f3ff] overflow-hidden" style={{ fontFamily: "'Manrope', sans-serif" }}>
+    <div className="flex h-screen bg-[#f0f3ff] overflow-hidden relative z-0" style={{ fontFamily: "'Manrope', sans-serif" }}>
+      <canvas ref={bgCanvasRef} className="absolute inset-0 w-full h-full -z-10 pointer-events-none" />
 
       {/* Sidebar */}
-      <aside className={`flex flex-col bg-white/70 backdrop-blur-xl border-r border-[#2b6389]/10 transition-all duration-300 ${sidebarOpen ? "w-72" : "w-0 overflow-hidden"}`}>
+      <aside className={`flex flex-col bg-white/40 backdrop-blur-3xl border-r border-white/50 shadow-[4px_0_24px_rgba(0,0,0,0.02)] transition-all duration-300 z-10 ${sidebarOpen ? "w-60" : "w-0 overflow-hidden"}`}>
         <div className="flex items-center gap-3 px-5 py-5 border-b border-[#e7eeff]">
           <div className="flex items-center justify-center w-8 h-8 rounded-xl bg-gradient-to-br from-[#2b6389] to-[#466272]">
             <svg width="16" height="16" viewBox="0 0 28 28" fill="none">
@@ -442,7 +469,7 @@ export default function ChatPage() {
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-3 pb-4">
+        <div className="flex-1 overflow-y-auto px-2 pb-3 sp-sidebar-scroll">
           {sessions.length === 0 ? (
             <p className="text-[#71787f] text-xs text-center mt-8 px-4">Your conversations will appear here.</p>
           ) : (
@@ -466,7 +493,10 @@ export default function ChatPage() {
                 ) : (
                   <button
                     onClick={() => loadMessages(s.sessionId)}
-                    className={`w-full text-left px-3 py-3 pr-9 rounded-xl mb-1 transition-all duration-150 ${activeSessionId === s.sessionId ? "bg-[#e7eeff] text-[#2b6389]" : "text-[#41474e] hover:bg-[#f0f3ff]"
+                    className={`w-full text-left px-4 py-3 pr-9 rounded-2xl mb-1 transition-all duration-300 border ${
+                      activeSessionId === s.sessionId 
+                        ? "bg-white/60 backdrop-blur-md border-white/80 shadow-sm text-[#2b6389]" 
+                        : "bg-transparent border-transparent text-[#41474e] hover:bg-white/30 hover:border-white/40"
                       }`}
                   >
                     <p className="text-sm font-medium truncate">{s.title}</p>
@@ -517,7 +547,7 @@ export default function ChatPage() {
           )}
         </div>
 
-        <div ref={userMenuRef} className="relative px-4 py-4 border-t border-[#e7eeff]">
+        <div ref={userMenuRef} className="relative px-3 py-3 border-t border-white/50 bg-white/20 backdrop-blur-md">
           {userMenuOpen && (
             <div className="absolute bottom-full left-4 right-4 mb-2 bg-white rounded-xl border border-[#e7eeff] shadow-lg shadow-[#2b6389]/10 overflow-hidden">
               <div className="px-4 py-3 border-b border-[#e7eeff]">
@@ -553,8 +583,8 @@ export default function ChatPage() {
       </aside>
 
       {/* Main */}
-      <div className="flex-1 flex flex-col min-w-0">
-        <header className="flex items-center gap-3 px-6 py-4 bg-white/60 backdrop-blur-xl border-b border-[#2b6389]/10">
+      <div className="relative z-0 flex-1 flex flex-col min-w-0">
+        <header className="flex items-center gap-3 px-4 py-2.5 bg-white/40 backdrop-blur-2xl border-b border-white/50 shadow-[0_4px_24px_rgba(0,0,0,0.02)] z-10">
           <button onClick={() => setSidebarOpen(!sidebarOpen)} className="p-2 rounded-lg text-[#41474e] hover:bg-[#e7eeff] transition-colors">
             <svg width="18" height="18" fill="none" viewBox="0 0 18 18">
               <path d="M2 4.5h14M2 9h14M2 13.5h14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
@@ -565,8 +595,7 @@ export default function ChatPage() {
           </h2>
         </header>
 
-        <div className="relative flex-1 overflow-y-auto px-4 md:px-8 py-6">
-          <canvas ref={bgCanvasRef} className="absolute inset-0 w-full h-full -z-10 pointer-events-none" />
+        <div className="flex-1 overflow-y-auto px-4 md:px-8 py-6">
           {loadingMessages ? (
             <div className="flex justify-center mt-16">
               <div className="w-6 h-6 border-2 border-[#2b6389] border-t-transparent rounded-full animate-spin" />
@@ -586,14 +615,19 @@ export default function ChatPage() {
               <p className="text-[#41474e] text-sm leading-relaxed">
                 Ask me to search files, create list items, upload documents, or update records on your SharePoint site.
               </p>
-              <div className="grid grid-cols-1 gap-2 mt-6 w-full">
-                {["Show me all items in Project Tasks", "Upload a file to Company Knowledge Base", "Create a new item in testList"].map((s) => (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-8 w-full max-w-2xl mx-auto">
+                {[
+                  { icon: "📋", text: "Show me all items in Project Tasks" },
+                  { icon: "📤", text: "Upload a file to Company Knowledge Base" },
+                  { icon: "✨", text: "Create a new item in testList" }
+                ].map((s) => (
                   <button
-                    key={s}
-                    onClick={() => setInput(s)}
-                    className="px-4 py-3 rounded-xl bg-white/80 border border-[#dee8ff] text-[#2b6389] text-sm text-left hover:bg-[#e7eeff] hover:border-[#2b6389]/30 transition-all duration-150"
+                    key={s.text}
+                    onClick={() => setInput(s.text)}
+                    className="flex flex-col items-center justify-center gap-3 p-5 rounded-3xl bg-white/50 backdrop-blur-md border border-white/60 shadow-[0_4px_24px_rgba(0,0,0,0.04)] text-[#2b6389] text-sm text-center font-medium hover:-translate-y-1.5 hover:shadow-[0_12px_32px_rgba(43,99,137,0.12)] hover:bg-white/80 transition-all duration-300"
                   >
-                    {s}
+                    <span className="text-3xl mb-1">{s.icon}</span>
+                    <span className="leading-snug">{s.text}</span>
                   </button>
                 ))}
               </div>
@@ -617,16 +651,20 @@ export default function ChatPage() {
                     )}
 
                     <div className={`group max-w-[78%] min-w-0 ${isUser ? "items-end" : "items-start"} flex flex-col`}>
-                      <div className={`px-4 py-3 rounded-2xl text-sm leading-relaxed ${isUser
-                        ? "bg-gradient-to-br from-[#2b6389] to-[#466272] text-white rounded-br-sm"
-                        : "bg-white/80 backdrop-blur text-[#121c2c] border border-[#dee8ff] rounded-bl-sm shadow-sm"
+                      <div className={`px-5 py-4 rounded-3xl text-sm leading-relaxed ${isUser
+                        ? "bg-gradient-to-br from-[#2b6389]/95 to-[#466272]/95 backdrop-blur-md border border-white/20 text-white rounded-br-sm shadow-md"
+                        : "bg-white/50 backdrop-blur-xl text-[#121c2c] border border-white/60 rounded-bl-sm shadow-[0_8px_32px_rgba(0,0,0,0.04)]"
                         }`}>
 
                         {/* Live tool-call status line, real-time while streaming */}
                         {!isUser && liveCallingTool && (
-                          <div className="flex items-center gap-2 mb-2 text-xs text-[#2b6389] font-medium">
-                            <span className="sp-thinking-dot" />
-                            Calling <code className="px-1.5 py-0.5 rounded bg-[#2b6389]/10">{liveCallingTool.name}</code>…
+                          <div className="flex items-center gap-3 mb-3 px-3 py-2 rounded-xl bg-white/40 backdrop-blur-xl border border-white/60 shadow-sm w-fit text-xs text-[#2b6389] font-semibold">
+                            <span className="flex gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-[#2b6389] animate-bounce" style={{ animationDelay: "0ms" }} />
+                              <span className="w-1.5 h-1.5 rounded-full bg-[#2b6389] animate-bounce" style={{ animationDelay: "150ms" }} />
+                              <span className="w-1.5 h-1.5 rounded-full bg-[#2b6389] animate-bounce" style={{ animationDelay: "300ms" }} />
+                            </span>
+                            Running <code className="px-2 py-0.5 rounded-md bg-white/60 border border-white/40 shadow-[0_2px_8px_rgba(43,99,137,0.05)]">{liveCallingTool.name}</code>
                           </div>
                         )}
 
@@ -693,9 +731,9 @@ export default function ChatPage() {
           )}
         </div>
 
-        <div className="px-4 md:px-8 py-4 bg-white/60 backdrop-blur-xl border-t border-[#2b6389]/10">
+        <div className="px-4 md:px-8 py-2.5 bg-white/40 backdrop-blur-2xl border-t border-white/50 z-10">
           <div className="max-w-3xl mx-auto">
-            <div className="flex items-end gap-3 bg-white/90 border border-[#dee8ff] rounded-2xl px-4 py-3 shadow-sm focus-within:border-[#2b6389] focus-within:shadow-[0_0_0_3px_rgba(43,99,137,0.08)] transition-all duration-200">
+            <div className="flex items-end gap-3 bg-white/50 backdrop-blur-xl border border-white/60 rounded-3xl px-4 py-2 shadow-[0_8px_32px_rgba(0,0,0,0.04)] focus-within:bg-white/80 focus-within:border-white focus-within:shadow-[0_8px_32px_rgba(43,99,137,0.1)] transition-all duration-300">
               <textarea
                 ref={textareaRef}
                 rows={1}
