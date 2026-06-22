@@ -30,6 +30,7 @@ interface Message {
   streaming?: boolean;
   tools?: ToolEvent[];
   usage?: UsageEvent[];
+  attachedFileName?: string | null;
 }
 
 interface Session {
@@ -102,6 +103,8 @@ export default function ChatPage() {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
+  const [attachedFile, setAttachedFile] = useState<{ name: string; base64: string; mimeType: string } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [sending, setSending] = useState(false);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -114,6 +117,9 @@ export default function ChatPage() {
   const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<Session | null>(null);
+  const [backendStatus, setBackendStatus] = useState<"ok" | "degraded" | "unknown">("unknown");
+  const [pendingUpload, setPendingUpload] = useState<{ name: string; base64: string; mimeType: string } | null>(null);
+  const [libraryInput, setLibraryInput] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -122,7 +128,15 @@ export default function ChatPage() {
   const renameInputRef = useRef<HTMLInputElement>(null);
   const traceAsideRef = useRef<HTMLDivElement>(null);
 
+  useEffect(() => {
+    fetch("/api/chat/health")
+      .then(r => r.json())
+      .then(d => setBackendStatus(d.sharepoint === "reachable" ? "ok" : "degraded"))
+      .catch(() => setBackendStatus("degraded"));
+  }, []);
+
   useEffect(() => { loadSessions(); loadUser(); }, []);
+
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
   useEffect(() => {
@@ -298,6 +312,7 @@ color = mix(color, bg, 0.12);
     setActiveSessionId(null);
     setMessages([]);
     setInput("");
+    setAttachedFile(null);
   };
 
   // ── Send a message and consume the live SSE stream from /api/chat ─────────
@@ -305,18 +320,28 @@ color = mix(color, bg, 0.12);
 
   const handleSend = async () => {
     const trimmed = input.trim();
-    if (!trimmed || sendingRef.current) return;
+    if (!trimmed && !attachedFile) return;
+    if (sendingRef.current) return;
     sendingRef.current = true;
+
+    // What shows in the chat bubble — always clean
+    const displayMessage = attachedFile
+      ? trimmed || `Upload "${attachedFile.name}" to a Document Library`
+      : trimmed;
 
     setMessages((prev) => [...prev, {
       messageId: "temp-" + Date.now(),
       role: "user",
-      content: trimmed,
+      content: displayMessage,
+      attachedFileName: attachedFile?.name || null,
       timestamp: new Date().toISOString(),
     }]);
+
     setInput("");
-    setSending(true);
+    setAttachedFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
     if (textareaRef.current) textareaRef.current.style.height = "auto";
+    setSending(true);
 
     const assistantId = "stream-" + Date.now();
     setMessages((prev) => [...prev, {
@@ -330,6 +355,60 @@ color = mix(color, bg, 0.12);
     }]);
 
     try {
+      // ── File upload — handle directly, bypass the AI agent ─────────────
+      if (attachedFile) {
+        // Extract library name from what user typed
+        // e.g. "Upload "file.txt" to the HR Documents" → "HR Documents"
+        const libraryMatch = trimmed.match(/to\s+(?:the\s+)?(.+)$/i);
+        const libraryName = libraryMatch ? libraryMatch[1].trim() : "";
+
+        if (!libraryName) {
+          // User didn't specify library — ask them
+          setMessages((prev) => prev.map((m) =>
+            m.messageId === assistantId
+              ? { ...m, content: "Which Document Library would you like to upload this file to? Please type the library name (e.g. 'Documents', 'HR Documents').", streaming: false }
+              : m
+          ));
+          setSending(false);
+          sendingRef.current = false;
+          return;
+        }
+
+        try {
+          const uploadRes = await fetch("/api/upload", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              filename: attachedFile.name,
+              content: attachedFile.base64,
+              libraryName,
+              isBase64: true,
+              mimeType: attachedFile.mimeType,
+            }),
+          });
+
+          const uploadData = await uploadRes.json();
+          const successMsg = uploadData.error
+            ? `❌ Failed to upload "${attachedFile.name}": ${uploadData.error}`
+            : `✅ File **${attachedFile.name}** uploaded successfully!\n\n- **Library:** ${uploadData.libraryName || libraryName}\n- **Size:** ${uploadData.size ? uploadData.size + " bytes" : "—"}\n- **Link:** [View File](${uploadData.webUrl})`;
+
+          setMessages((prev) => prev.map((m) =>
+            m.messageId === assistantId ? { ...m, content: successMsg, streaming: false } : m
+          ));
+        } catch {
+          setMessages((prev) => prev.map((m) =>
+            m.messageId === assistantId ? { ...m, content: "❌ Upload failed. Please try again.", streaming: false } : m
+          ));
+        } finally {
+          setSending(false);
+          sendingRef.current = false;
+          if (activeSessionId) loadSessions();
+          textareaRef.current?.focus();
+        }
+        return;
+      }
+
+      // ── Normal chat message — goes through AI agent ─────────────────────
       const res = await apiFetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -507,6 +586,7 @@ color = mix(color, bg, 0.12);
           <span className="font-bold text-[#121c2c] text-sm" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
             SharePilot
           </span>
+          <span className={`w-2 h-2 rounded-full ${backendStatus === "ok" ? "bg-green-400" : backendStatus === "degraded" ? "bg-red-400 animate-pulse" : "bg-gray-300"}`} title={`Backend: ${backendStatus}`} />
         </div>
 
         <div className="px-4 py-3">
@@ -546,8 +626,8 @@ color = mix(color, bg, 0.12);
                   <button
                     onClick={() => loadMessages(s.sessionId)}
                     className={`w-full text-left px-4 py-3 pr-9 rounded-2xl mb-1 transition-all duration-300 border ${activeSessionId === s.sessionId
-                        ? "bg-white/60 backdrop-blur-md border-white/80 shadow-sm text-[#2b6389]"
-                        : "bg-transparent border-transparent text-[#41474e] hover:bg-white/30 hover:border-white/40"
+                      ? "bg-white/60 backdrop-blur-md border-white/80 shadow-sm text-[#2b6389]"
+                      : "bg-transparent border-transparent text-[#41474e] hover:bg-white/30 hover:border-white/40"
                       }`}
                   >
                     <p className="text-sm font-medium truncate">{s.title}</p>
@@ -647,8 +727,12 @@ color = mix(color, bg, 0.12);
 
         <div className="flex-1 overflow-y-auto px-4 md:px-8 py-6">
           {loadingMessages ? (
-            <div className="flex justify-center mt-16">
-              <div className="w-6 h-6 border-2 border-[#2b6389] border-t-transparent rounded-full animate-spin" />
+            <div className="max-w-3xl mx-auto space-y-4 animate-pulse">
+              {[...Array(4)].map((_, i) => (
+                <div key={i} className={`flex ${i % 2 === 0 ? "justify-start" : "justify-end"}`}>
+                  <div className={`h-16 rounded-3xl bg-white/40 border border-white/30 ${i % 2 === 0 ? "w-[65%]" : "w-[45%]"}`} />
+                </div>
+              ))}
             </div>
           ) : messages.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-center max-w-md mx-auto">
@@ -721,7 +805,20 @@ color = mix(color, bg, 0.12);
                         )}
 
                         {isUser ? (
-                          <p className="whitespace-pre-wrap">{msg.content}</p>
+                          <div className="flex flex-col gap-2">
+                            {msg.attachedFileName && (
+                              <div className="flex items-center gap-2 px-2 py-1.5 bg-white/20 border border-white/30 rounded-xl w-fit">
+                                <svg width="13" height="13" fill="none" viewBox="0 0 16 16">
+                                  <path d="M4 2h6l4 4v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z" stroke="white" strokeWidth="1.3" />
+                                  <path d="M9 2v4h4" stroke="white" strokeWidth="1.3" />
+                                </svg>
+                                <span className="text-xs text-white/90 font-medium max-w-[180px] truncate">
+                                  {msg.attachedFileName}
+                                </span>
+                              </div>
+                            )}
+                            <p className="whitespace-pre-wrap">{msg.content}</p>
+                          </div>
                         ) : msg.streaming && !msg.content ? (
                           <ThinkingIndicator />
                         ) : (
@@ -769,6 +866,22 @@ color = mix(color, bg, 0.12);
                             </button>
                           </>
                         )}
+
+                        {/* Summarize button — standalone, NOT inside any other button */}
+                        {!isUser && !msg.streaming && msg.content.match(/\.(docx|xlsx|csv|txt)/i) && (
+                          <>
+                            <span className="text-[#dee8ff]">·</span>
+                            <button
+                              onClick={() => {
+                                setInput("Summarize that file for me");
+                                setTimeout(() => handleSend(), 100);
+                              }}
+                              className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs text-[#71787f] hover:bg-[#e7eeff] hover:text-[#2b6389] transition-colors opacity-0 group-hover:opacity-100"
+                            >
+                              ✦ Summarize
+                            </button>
+                          </>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -781,31 +894,88 @@ color = mix(color, bg, 0.12);
 
         <div className="px-4 md:px-8 py-2.5 bg-white/40 backdrop-blur-2xl border-t border-white/50 z-10">
           <div className="max-w-3xl mx-auto">
-            <div className="flex items-end gap-3 bg-white/50 backdrop-blur-xl border border-white/60 rounded-3xl px-4 py-2 shadow-[0_8px_32px_rgba(0,0,0,0.04)] focus-within:bg-white/80 focus-within:border-white focus-within:shadow-[0_8px_32px_rgba(43,99,137,0.1)] transition-all duration-300">
-              <textarea
-                ref={textareaRef}
-                rows={1}
-                value={input}
-                onChange={(e) => {
-                  setInput(e.target.value);
-                  e.target.style.height = "auto";
-                  e.target.style.height = Math.min(e.target.scrollHeight, 160) + "px";
-                }}
-                onKeyDown={handleKeyDown}
-                placeholder="Ask SharePilot anything about your SharePoint site…"
-                disabled={sending}
-                className="flex-1 resize-none bg-transparent text-[#121c2c] placeholder-[#71787f] text-sm outline-none max-h-40 leading-relaxed disabled:opacity-50"
-                style={{ fontFamily: "'Manrope', sans-serif" }}
-              />
-              <button
-                onClick={handleSend}
-                disabled={!input.trim() || sending}
-                className="flex-shrink-0 w-9 h-9 rounded-xl bg-gradient-to-br from-[#2b6389] to-[#466272] flex items-center justify-center text-white transition-all duration-150 hover:shadow-[0_4px_12px_rgba(43,99,137,0.35)] hover:-translate-y-0.5 disabled:opacity-40 disabled:hover:shadow-none disabled:hover:translate-y-0"
-              >
-                <svg width="16" height="16" fill="none" viewBox="0 0 16 16">
-                  <path d="M14 8L2 2l2.5 6L2 14l12-6z" fill="white" />
-                </svg>
-              </button>
+            <div className="flex flex-col bg-white/50 backdrop-blur-xl border border-white/60 rounded-3xl px-4 py-2 shadow-[0_8px_32px_rgba(0,0,0,0.04)] focus-within:bg-white/80 focus-within:border-white focus-within:shadow-[0_8px_32px_rgba(43,99,137,0.1)] transition-all duration-300">
+
+              {/* File preview chip — shows when a file is attached */}
+              {attachedFile && (
+                <div className="flex items-center gap-2 mb-2 px-2 py-1.5 bg-[#e7eeff] border border-[#dee8ff] rounded-xl w-fit">
+                  <svg width="14" height="14" fill="none" viewBox="0 0 16 16">
+                    <path d="M4 2h6l4 4v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z" stroke="#2b6389" strokeWidth="1.3" />
+                    <path d="M9 2v4h4" stroke="#2b6389" strokeWidth="1.3" />
+                  </svg>
+                  <span className="text-xs text-[#2b6389] font-medium max-w-[200px] truncate">{attachedFile.name}</span>
+                  <button
+                    onClick={() => setAttachedFile(null)}
+                    className="text-[#71787f] hover:text-[#ba1a1a] transition-colors ml-1"
+                  >
+                    <svg width="12" height="12" fill="none" viewBox="0 0 16 16">
+                      <path d="M3 3l10 10M13 3L3 13" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                    </svg>
+                  </button>
+                </div>
+              )}
+
+              <div className="flex items-end gap-3">
+                {/* Hidden file input */}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  className="hidden"
+                  accept=".txt,.csv,.json,.md,.docx,.xlsx"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = () => {
+                      const base64 = (reader.result as string).split(",")[1];
+                      setAttachedFile({ name: file.name, base64, mimeType: file.type });
+                      setInput(`Upload "${file.name}" to the `);
+                      setTimeout(() => textareaRef.current?.focus(), 50);
+                    };
+                    reader.readAsDataURL(file);
+                    e.target.value = "";
+                  }}
+                />
+
+                {/* Paperclip button */}
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={sending}
+                  title="Attach a file"
+                  className="flex-shrink-0 w-9 h-9 rounded-xl flex items-center justify-center text-[#71787f] hover:bg-[#e7eeff] hover:text-[#2b6389] transition-colors disabled:opacity-40"
+                >
+                  <svg width="16" height="16" fill="none" viewBox="0 0 24 24">
+                    <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66L9.41 17.41a2 2 0 0 1-2.83-2.83l8.49-8.48" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </button>
+
+                <textarea
+                  ref={textareaRef}
+                  rows={1}
+                  value={input}
+                  onChange={(e) => {
+                    setInput(e.target.value);
+                    e.target.style.height = "auto";
+                    e.target.style.height = Math.min(e.target.scrollHeight, 160) + "px";
+                  }}
+                  onKeyDown={handleKeyDown}
+                  placeholder="Ask SharePilot anything about your SharePoint site…"
+                  disabled={sending}
+                  className="flex-1 resize-none bg-transparent text-[#121c2c] placeholder-[#71787f] text-sm outline-none max-h-40 leading-relaxed disabled:opacity-50"
+                  style={{ fontFamily: "'Manrope', sans-serif" }}
+                />
+
+                {/* Send button */}
+                <button
+                  onClick={handleSend}
+                  disabled={(!input.trim() && !attachedFile) || sending}
+                  className="flex-shrink-0 w-9 h-9 rounded-xl bg-gradient-to-br from-[#2b6389] to-[#466272] flex items-center justify-center text-white transition-all duration-150 hover:shadow-[0_4px_12px_rgba(43,99,137,0.35)] hover:-translate-y-0.5 disabled:opacity-40 disabled:hover:shadow-none disabled:hover:translate-y-0"
+                >
+                  <svg width="16" height="16" fill="none" viewBox="0 0 16 16">
+                    <path d="M14 8L2 2l2.5 6L2 14l12-6z" fill="white" />
+                  </svg>
+                </button>
+              </div>
             </div>
             <p className="text-center text-xs text-[#71787f] mt-2">
               SharePilot is AI and can make mistakes. Please double-check responses.
