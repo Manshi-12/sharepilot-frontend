@@ -43,6 +43,58 @@ interface UserProfile {
   email: string;
   displayName: string;
 }
+const thinkingMessages = [
+  "Analyzing your request…",
+  "Searching your SharePoint content…",
+  "Gathering the relevant information…",
+  "Working through the details…",
+  "Thanks for your patience — your answer is almost ready.",
+  "Checking your SharePoint data…",
+  "Reviewing available lists and files…",
+  "Preparing a response for you…",
+  "Looking through your workspace…",
+  "Processing your request securely…",
+  "Finding the best answer…",
+  "Connecting the dots across your content…",
+  "Verifying the latest information…",
+  "Fetching the required data…",
+  "Almost there — putting everything together.",
+  "Just a moment while I complete that task…",
+  "Organizing the results for you…",
+  "Finalizing your response…",
+  "Getting things ready behind the scenes…",
+  "This may take a few seconds depending on your data size.",
+  "Checking permissions and available resources…",
+  "Reviewing documents and list items…",
+  "Building a clear answer for you…",
+  "Making sure everything is accurate…",
+  "One last check before I respond…"
+];
+
+function ThinkingIndicator() {
+  const [msgIndex, setMsgIndex] = useState(0);
+
+  useEffect(() => {
+    setMsgIndex(Math.floor(Math.random() * thinkingMessages.length));
+    const interval = setInterval(() => {
+      setMsgIndex(Math.floor(Math.random() * thinkingMessages.length));
+    }, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  return (
+    <div className="flex items-center gap-3 h-5">
+      <div className="flex gap-1.5 items-center">
+        <span className="sp-thinking-dot" style={{ animationDelay: "0ms" }} />
+        <span className="sp-thinking-dot" style={{ animationDelay: "200ms" }} />
+        <span className="sp-thinking-dot" style={{ animationDelay: "400ms" }} />
+      </div>
+      <span className="text-sm font-medium text-[#2b6389] animate-pulse">
+        {thinkingMessages[msgIndex]}
+      </span>
+    </div>
+  );
+}
 
 export default function ChatPage() {
   const router = useRouter();
@@ -154,28 +206,28 @@ export default function ChatPage() {
         float d6 = length(uv - p6);
         float d7 = length(uv - p7);
         
-        // Soft white-lavender base
-        vec3 bg = vec3(0.95, 0.94, 1.00);
-        
-        // Vivid violet, pink, indigo, rose, purple palette
-        vec3 violet  = vec3(0.69, 0.25, 1.00); // #b040ff
-        vec3 pink    = vec3(1.00, 0.31, 0.66); // #ff4fa8
-        vec3 indigo  = vec3(0.39, 0.40, 0.95); // #6466f3
-        vec3 rose    = vec3(0.96, 0.44, 0.71); // #f572b6
-        vec3 purple  = vec3(0.75, 0.52, 0.99); // #c084fc
-        vec3 coral   = vec3(0.98, 0.44, 0.52); // #fb7185
-        vec3 lavender= vec3(0.82, 0.68, 1.00); // #d1adff
-        
-        vec3 color = bg;
-        // Tighter smoothstep = more focused blob, higher mix = more saturated
-        color = mix(color, violet,   smoothstep(0.38, 0.0, d1) * 0.75);
-        color = mix(color, pink,     smoothstep(0.35, 0.0, d2) * 0.72);
-        color = mix(color, indigo,   smoothstep(0.40, 0.0, d3) * 0.68);
-        color = mix(color, rose,     smoothstep(0.32, 0.0, d4) * 0.70);
-        color = mix(color, purple,   smoothstep(0.42, 0.0, d5) * 0.65);
-        color = mix(color, coral,    smoothstep(0.30, 0.0, d6) * 0.72);
-        color = mix(color, lavender, smoothstep(0.45, 0.0, d7) * 0.60);
-        
+       // Soft cool base
+vec3 bg = vec3(0.96, 0.98, 1.00);
+
+// SharePilot palette
+vec3 mist   = vec3(0.67, 0.80, 0.84); // #AACCD6
+vec3 azure  = vec3(0.26, 0.51, 0.87); // #4382DF
+vec3 indigo = vec3(0.27, 0.28, 0.68); // #4647AE
+vec3 navy   = vec3(0.07, 0.18, 0.51); // #112E81
+vec3 teal   = vec3(0.48, 0.89, 0.81); // #7AE2CF
+
+vec3 color = bg;
+
+color = mix(color, mist,   smoothstep(0.40, 0.0, d1) * 0.20);
+color = mix(color, azure,  smoothstep(0.36, 0.0, d2) * 0.18);
+color = mix(color, indigo, smoothstep(0.42, 0.0, d3) * 0.16);
+color = mix(color, teal,   smoothstep(0.34, 0.0, d4) * 0.15);
+color = mix(color, azure,  smoothstep(0.44, 0.0, d5) * 0.14);
+color = mix(color, navy,   smoothstep(0.32, 0.0, d6) * 0.10);
+color = mix(color, teal,   smoothstep(0.46, 0.0, d7) * 0.12);
+
+// Slight desaturation for a glass effect
+color = mix(color, bg, 0.12);
         gl_FragColor = vec4(color, 1.0);
       }`;
 
@@ -493,9 +545,8 @@ export default function ChatPage() {
                 ) : (
                   <button
                     onClick={() => loadMessages(s.sessionId)}
-                    className={`w-full text-left px-4 py-3 pr-9 rounded-2xl mb-1 transition-all duration-300 border ${
-                      activeSessionId === s.sessionId 
-                        ? "bg-white/60 backdrop-blur-md border-white/80 shadow-sm text-[#2b6389]" 
+                    className={`w-full text-left px-4 py-3 pr-9 rounded-2xl mb-1 transition-all duration-300 border ${activeSessionId === s.sessionId
+                        ? "bg-white/60 backdrop-blur-md border-white/80 shadow-sm text-[#2b6389]"
                         : "bg-transparent border-transparent text-[#41474e] hover:bg-white/30 hover:border-white/40"
                       }`}
                   >
@@ -547,39 +598,7 @@ export default function ChatPage() {
           )}
         </div>
 
-        <div ref={userMenuRef} className="relative px-3 py-3 border-t border-white/50 bg-white/20 backdrop-blur-md">
-          {userMenuOpen && (
-            <div className="absolute bottom-full left-4 right-4 mb-2 bg-white rounded-xl border border-[#e7eeff] shadow-lg shadow-[#2b6389]/10 overflow-hidden">
-              <div className="px-4 py-3 border-b border-[#e7eeff]">
-                <p className="text-sm font-semibold text-[#121c2c] truncate">{user?.displayName || "Loading…"}</p>
-                <p className="text-xs text-[#71787f] truncate">{user?.email}</p>
-              </div>
-              <button
-                onClick={handleLogout}
-                className="w-full flex items-center gap-2 px-4 py-3 text-[#ba1a1a] text-sm hover:bg-[#ffdad6]/40 transition-colors"
-              >
-                <svg width="16" height="16" fill="none" viewBox="0 0 16 16">
-                  <path d="M6 14H3a1 1 0 01-1-1V3a1 1 0 011-1h3M11 11l3-3-3-3M14 8H6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-                Sign Out
-              </button>
-            </div>
-          )}
-          <button
-            onClick={() => setUserMenuOpen((v) => !v)}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left hover:bg-[#f0f3ff] transition-colors"
-          >
-            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#2b6389] to-[#466272] flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
-              {(user?.displayName || "?").trim().charAt(0).toUpperCase()}
-            </div>
-            <span className="flex-1 min-w-0 text-sm font-medium text-[#121c2c] truncate">
-              {user?.displayName || "Account"}
-            </span>
-            <svg width="14" height="14" fill="none" viewBox="0 0 16 16" className={`text-[#71787f] flex-shrink-0 transition-transform duration-200 ${userMenuOpen ? "rotate-180" : ""}`}>
-              <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </button>
-        </div>
+
       </aside>
 
       {/* Main */}
@@ -590,9 +609,40 @@ export default function ChatPage() {
               <path d="M2 4.5h14M2 9h14M2 13.5h14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
             </svg>
           </button>
-          <h2 className="font-semibold text-[#121c2c] text-sm truncate" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+          <h2 className="flex-1 font-semibold text-[#121c2c] text-sm truncate" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
             {activeSessionId ? (sessions.find((s) => s.sessionId === activeSessionId)?.title || "Chat") : "New Conversation"}
           </h2>
+
+          <div ref={userMenuRef} className="relative">
+            <button
+              onClick={() => setUserMenuOpen((v) => !v)}
+              className="flex items-center gap-2 px-2 py-1.5 rounded-xl text-left hover:bg-white/50 transition-colors"
+            >
+              <span className="hidden sm:block text-sm font-medium text-[#121c2c] truncate max-w-[120px]">
+                {user?.displayName || "Account"}
+              </span>
+              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#2b6389] to-[#466272] flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+                {(user?.displayName || "?").trim().charAt(0).toUpperCase()}
+              </div>
+            </button>
+            {userMenuOpen && (
+              <div className="absolute top-full right-0 mt-2 w-56 bg-white rounded-xl border border-[#e7eeff] shadow-lg shadow-[#2b6389]/10 overflow-hidden z-50">
+                <div className="px-4 py-3 border-b border-[#e7eeff]">
+                  <p className="text-sm font-semibold text-[#121c2c] truncate">{user?.displayName || "Loading…"}</p>
+                  <p className="text-xs text-[#71787f] truncate">{user?.email}</p>
+                </div>
+                <button
+                  onClick={handleLogout}
+                  className="w-full flex items-center gap-2 px-4 py-3 text-[#ba1a1a] text-sm hover:bg-[#ffdad6]/40 transition-colors"
+                >
+                  <svg width="16" height="16" fill="none" viewBox="0 0 16 16">
+                    <path d="M6 14H3a1 1 0 01-1-1V3a1 1 0 011-1h3M11 11l3-3-3-3M14 8H6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                  Sign Out
+                </button>
+              </div>
+            )}
+          </div>
         </header>
 
         <div className="flex-1 overflow-y-auto px-4 md:px-8 py-6">
@@ -602,11 +652,13 @@ export default function ChatPage() {
             </div>
           ) : messages.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-center max-w-md mx-auto">
-              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#2b6389] to-[#466272] flex items-center justify-center mb-4 shadow-lg shadow-[#8cc0eb]/30">
-                <svg width="32" height="32" viewBox="0 0 28 28" fill="none">
-                  <path d="M6 8h16M6 14h10M6 20h13" stroke="white" strokeWidth="2.2" strokeLinecap="round" />
-                  <circle cx="21" cy="20" r="5" fill="#98ccf8" />
-                  <path d="M19 20l1.5 1.5L23 18.5" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              <div className="w-24 h-24 flex items-center justify-center mb-2">
+                <svg width="100%" height="100%" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" className="drop-shadow-sm hover:drop-shadow-md transition-all duration-300 hover:-translate-y-1">
+                  <circle cx="34" cy="20" r="14" fill="#04686B" opacity="0.85" />
+                  <circle cx="44" cy="34" r="15" fill="#1BBCC2" opacity="0.85" />
+                  <circle cx="32" cy="46" r="12" fill="#5EE5E5" opacity="0.85" />
+                  <rect x="10" y="22" width="28" height="28" rx="5" fill="#03787C" />
+                  <text x="24" y="36.5" fill="white" fontFamily="'Plus Jakarta Sans', sans-serif" fontWeight="800" fontSize="21" textAnchor="middle" dominantBaseline="central">S</text>
                 </svg>
               </div>
               <h3 className="text-xl font-bold text-[#121c2c] mb-2" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
@@ -671,11 +723,7 @@ export default function ChatPage() {
                         {isUser ? (
                           <p className="whitespace-pre-wrap">{msg.content}</p>
                         ) : msg.streaming && !msg.content ? (
-                          <div className="flex gap-1.5 items-center h-5">
-                            <span className="sp-thinking-dot" style={{ animationDelay: "0ms" }} />
-                            <span className="sp-thinking-dot" style={{ animationDelay: "200ms" }} />
-                            <span className="sp-thinking-dot" style={{ animationDelay: "400ms" }} />
-                          </div>
+                          <ThinkingIndicator />
                         ) : (
                           <div className="sp-markdown">
                             <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
@@ -760,7 +808,7 @@ export default function ChatPage() {
               </button>
             </div>
             <p className="text-center text-xs text-[#71787f] mt-2">
-              Press Enter to send · Shift+Enter for new line
+              SharePilot is AI and can make mistakes. Please double-check responses.
             </p>
           </div>
         </div>
