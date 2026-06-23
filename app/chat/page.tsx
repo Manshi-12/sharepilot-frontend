@@ -31,6 +31,8 @@ interface Message {
   tools?: ToolEvent[];
   usage?: UsageEvent[];
   attachedFileName?: string | null;
+  attachedFileBase64?: string | null;
+  attachedFileMimeType?: string | null;
 }
 
 interface Session {
@@ -104,6 +106,7 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [attachedFile, setAttachedFile] = useState<{ name: string; base64: string; mimeType: string } | null>(null);
+  const [previewFile, setPreviewFile] = useState<{ name: string; base64: string; mimeType: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [sending, setSending] = useState(false);
   const [loadingMessages, setLoadingMessages] = useState(false);
@@ -334,6 +337,8 @@ color = mix(color, bg, 0.12);
       role: "user",
       content: displayMessage,
       attachedFileName: attachedFile?.name || null,
+      attachedFileBase64: attachedFile?.base64 || null,
+      attachedFileMimeType: attachedFile?.mimeType || null,
       timestamp: new Date().toISOString(),
     }]);
 
@@ -807,7 +812,18 @@ color = mix(color, bg, 0.12);
                         {isUser ? (
                           <div className="flex flex-col gap-2">
                             {msg.attachedFileName && (
-                              <div className="flex items-center gap-2 px-2 py-1.5 bg-white/20 border border-white/30 rounded-xl w-fit">
+                              <div 
+                                className="flex items-center gap-2 px-2 py-1.5 bg-white/20 border border-white/30 rounded-xl w-fit cursor-pointer hover:bg-white/30 transition-colors"
+                                onClick={() => {
+                                  if (msg.attachedFileBase64 && msg.attachedFileMimeType) {
+                                    setPreviewFile({
+                                      name: msg.attachedFileName!,
+                                      base64: msg.attachedFileBase64,
+                                      mimeType: msg.attachedFileMimeType
+                                    });
+                                  }
+                                }}
+                              >
                                 <svg width="13" height="13" fill="none" viewBox="0 0 16 16">
                                   <path d="M4 2h6l4 4v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z" stroke="white" strokeWidth="1.3" />
                                   <path d="M9 2v4h4" stroke="white" strokeWidth="1.3" />
@@ -898,14 +914,20 @@ color = mix(color, bg, 0.12);
 
               {/* File preview chip — shows when a file is attached */}
               {attachedFile && (
-                <div className="flex items-center gap-2 mb-2 px-2 py-1.5 bg-[#e7eeff] border border-[#dee8ff] rounded-xl w-fit">
+                <div 
+                  className="flex items-center gap-2 mb-2 px-2 py-1.5 bg-[#e7eeff] border border-[#dee8ff] rounded-xl w-fit cursor-pointer hover:bg-[#d8e3ff] transition-colors"
+                  onClick={() => setPreviewFile(attachedFile)}
+                >
                   <svg width="14" height="14" fill="none" viewBox="0 0 16 16">
                     <path d="M4 2h6l4 4v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z" stroke="#2b6389" strokeWidth="1.3" />
                     <path d="M9 2v4h4" stroke="#2b6389" strokeWidth="1.3" />
                   </svg>
                   <span className="text-xs text-[#2b6389] font-medium max-w-[200px] truncate">{attachedFile.name}</span>
                   <button
-                    onClick={() => setAttachedFile(null)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setAttachedFile(null);
+                    }}
                     className="text-[#71787f] hover:text-[#ba1a1a] transition-colors ml-1"
                   >
                     <svg width="12" height="12" fill="none" viewBox="0 0 16 16">
@@ -956,12 +978,12 @@ color = mix(color, bg, 0.12);
                   onChange={(e) => {
                     setInput(e.target.value);
                     e.target.style.height = "auto";
-                    e.target.style.height = Math.min(e.target.scrollHeight, 160) + "px";
+                    e.target.style.height = Math.min(e.target.scrollHeight, 100) + "px";
                   }}
                   onKeyDown={handleKeyDown}
                   placeholder="Ask SharePilot anything about your SharePoint site…"
                   disabled={sending}
-                  className="flex-1 resize-none bg-transparent text-[#121c2c] placeholder-[#71787f] text-sm outline-none max-h-40 leading-relaxed disabled:opacity-50"
+                  className="flex-1 resize-none bg-transparent text-[#121c2c] placeholder-[#71787f] text-sm outline-none max-h-20 leading-[44px] h-[44px] disabled:opacity-50"
                   style={{ fontFamily: "'Manrope', sans-serif" }}
                 />
 
@@ -969,7 +991,7 @@ color = mix(color, bg, 0.12);
                 <button
                   onClick={handleSend}
                   disabled={(!input.trim() && !attachedFile) || sending}
-                  className="flex-shrink-0 w-9 h-9 rounded-xl bg-gradient-to-br from-[#2b6389] to-[#466272] flex items-center justify-center text-white transition-all duration-150 hover:shadow-[0_4px_12px_rgba(43,99,137,0.35)] hover:-translate-y-0.5 disabled:opacity-40 disabled:hover:shadow-none disabled:hover:translate-y-0"
+                  className="flex-shrink-0 self-center w-10 h-10 rounded-xl bg-gradient-to-br from-[#2b6389] to-[#466272] flex items-center justify-center text-white transition-all duration-200 hover:shadow-[0_4px_12px_rgba(43,99,137,0.35)] hover:-translate-y-0.5 disabled:opacity-40 disabled:hover:shadow-none disabled:hover:translate-y-0"
                 >
                   <svg width="16" height="16" fill="none" viewBox="0 0 16 16">
                     <path d="M14 8L2 2l2.5 6L2 14l12-6z" fill="white" />
@@ -1146,6 +1168,57 @@ color = mix(color, bg, 0.12);
               >
                 Delete
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* File preview modal */}
+      {previewFile && (
+        <div 
+          className="fixed inset-0 bg-[#121c2c]/30 backdrop-blur-sm flex items-center justify-center z-[60] px-4 py-8"
+          onClick={() => setPreviewFile(null)}
+        >
+          <div 
+            className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-full flex flex-col overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-4 py-3 border-b border-[#dee8ff] bg-[#f8faff]">
+              <h3 className="font-semibold text-[#2b6389] flex items-center gap-2" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+                <svg width="16" height="16" fill="none" viewBox="0 0 16 16">
+                  <path d="M4 2h6l4 4v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z" stroke="#2b6389" strokeWidth="1.3" />
+                  <path d="M9 2v4h4" stroke="#2b6389" strokeWidth="1.3" />
+                </svg>
+                {previewFile.name}
+              </h3>
+              <button 
+                onClick={() => setPreviewFile(null)} 
+                className="text-[#71787f] hover:text-[#2b6389] p-1.5 rounded-lg hover:bg-[#e7eeff] transition-colors"
+              >
+                <svg width="18" height="18" fill="none" viewBox="0 0 16 16">
+                  <path d="M3 3l10 10M13 3L3 13" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                </svg>
+              </button>
+            </div>
+            <div className="p-6 overflow-y-auto flex-1 bg-white">
+              {previewFile.name.match(/\.(txt|csv|json|md)$/i) ? (
+                <pre className="text-sm text-[#41474e] whitespace-pre-wrap font-mono bg-[#f8faff] p-4 rounded-xl border border-[#dee8ff]">
+                  {(() => {
+                    try {
+                      // decode utf-8 cleanly from base64
+                      return decodeURIComponent(escape(window.atob(previewFile.base64)));
+                    } catch (e) {
+                      return "Unable to preview this file content.";
+                    }
+                  })()}
+                </pre>
+              ) : (
+                <div className="flex flex-col items-center justify-center h-48 text-[#71787f] gap-4">
+                  <svg width="40" height="40" fill="none" viewBox="0 0 24 24" stroke="currentColor" className="opacity-40">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  <p className="font-medium">Preview not available for this file type.</p>
+                </div>
+              )}
             </div>
           </div>
         </div>

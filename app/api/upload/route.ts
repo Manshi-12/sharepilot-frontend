@@ -39,36 +39,40 @@ export async function POST(req: NextRequest) {
         });
 
         const raw = await res.text();
-        console.log("[upload] raw MCP response:", raw);
+        console.log("[upload] raw:", raw);
 
-        let data: any;
-        try {
-            // MCP server returns SSE format: "event: message\ndata: {...}"
-            // Extract the JSON from the data: line
-            const dataLine = raw.split("\n").find((line) => line.startsWith("data:"));
-            if (!dataLine) {
-                return NextResponse.json({ error: "No data in MCP response." }, { status: 500 });
-            }
-            data = JSON.parse(dataLine.slice(5).trim());
-        } catch {
-            return NextResponse.json({ error: "Invalid response from MCP server." }, { status: 500 });
+        // Parse SSE envelope: find the "data: {...}" line
+        const dataLine = raw.split("\n").find((l) => l.startsWith("data:"));
+        if (!dataLine) {
+            return NextResponse.json({ error: "No data in MCP response." }, { status: 500 });
         }
 
-        // MCP returns result.content[0].text which is a JSON string
-        const resultText = data?.result?.content?.[0]?.text;
+        const envelope = JSON.parse(dataLine.slice(5).trim());
+
+        // Check for MCP-level error
+        if (envelope.error) {
+            return NextResponse.json({ error: envelope.error.message || "MCP error." }, { status: 500 });
+        }
+
+        // Extract the tool result text
+        const resultText = envelope?.result?.content?.[0]?.text;
         if (!resultText) {
-            console.error("[upload] unexpected MCP shape:", JSON.stringify(data));
-            return NextResponse.json({ error: "Unexpected response shape from MCP server." }, { status: 500 });
+            console.error("[upload] unexpected shape:", JSON.stringify(envelope));
+            return NextResponse.json({ error: "Unexpected response from MCP." }, { status: 500 });
         }
 
-        let parsed: any;
-        try {
-            parsed = JSON.parse(resultText);
-        } catch {
-            return NextResponse.json({ error: "Could not parse tool result." }, { status: 500 });
-        }
+        const parsed = JSON.parse(resultText);
+        console.log("[upload] parsed result:", parsed);
 
-        return NextResponse.json(parsed);
+        // Return clean response to frontend
+        return NextResponse.json({
+            name: parsed.name,
+            webUrl: parsed.webUrl,
+            size: parsed.size,
+            libraryName: parsed.libraryName,
+            status: parsed.status,
+        });
+
     } catch (err: any) {
         console.error("[upload] error:", err);
         return NextResponse.json({ error: err.message || "Upload failed." }, { status: 500 });
