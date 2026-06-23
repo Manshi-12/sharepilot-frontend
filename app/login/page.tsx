@@ -271,6 +271,17 @@ export default function LoginPage() {
         @keyframes fadeSwap { from { opacity:0; transform: translateY(6px); } to { opacity:1; transform: translateY(0); } }
         @keyframes shimmer { 0% { background-position:-200% center; } 100% { background-position:200% center; } }
 
+        @keyframes cardFloatHover {
+          0% {
+            transform: translateY(-12px) scale(1.08);
+          }
+          50% {
+            transform: translateY(-16px) scale(1.1);
+          }
+          100% {
+            transform: translateY(-12px) scale(1.08);
+          }
+        }
         .ai-orb {
           width: 130px; height: 130px; border-radius: 50%;
           background: radial-gradient(circle at 30% 30%, #ffffff, #8cc0eb);
@@ -284,14 +295,33 @@ export default function LoginPage() {
 
         .floating-card {
           position:absolute;
-          background: rgba(255,255,255,0.45);
+          background: rgba(230, 242, 255, 0.55);
           backdrop-filter: blur(20px);
-          border: 1px solid rgba(255,255,255,0.6);
+          border: 1px solid rgba(67, 130, 223, 0.15);
           box-shadow: 0 8px 32px 0 rgba(140,192,235,0.12);
           animation: drift var(--duration) ease-in-out infinite alternate;
-          transition: transform 0.25s cubic-bezier(.4,0,.2,1), background 0.25s ease, box-shadow 0.25s ease;
+
+          /* Smooth hover animation */
+          transition:
+            transform 0.55s cubic-bezier(0.22, 1, 0.36, 1),
+            background 0.45s ease,
+            box-shadow 0.45s ease,
+            filter 0.45s ease;
+
+          transform-origin: center center;
+          will-change: transform;
         }
-        .floating-card:hover { transform: translateY(-14px) scale(1.12) !important; background: rgba(255,255,255,0.75); box-shadow: 0 16px 36px 0 rgba(140,192,235,0.2); }
+
+        .floating-card:hover {
+          animation:
+            drift var(--duration) ease-in-out infinite alternate,
+            cardFloatHover 2s ease-in-out infinite;
+
+          background: rgba(235, 245, 255, 0.85);
+          box-shadow:
+            0 24px 50px rgba(67,130,223,0.18),
+            0 0 30px rgba(122,226,207,0.12);
+        }
         .floating-card.popped { transform: scale(1.18) !important; background: rgba(255,255,255,0.85) !important; box-shadow: 0 14px 40px 0 rgba(140,192,235,0.28) !important; z-index: 25; }
 
         .form-card { animation: fadeSwap 0.3s ease-out both; }
