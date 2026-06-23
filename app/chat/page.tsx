@@ -753,9 +753,9 @@ color = mix(color, bg, 0.12);
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-8 w-full max-w-2xl mx-auto">
                 {[
-                  { icon: "📋", text: "Show me all items in Project Tasks" },
-                  { icon: "📤", text: "Upload a file to Company Knowledge Base" },
-                  { icon: "✨", text: "Create a new item in testList" }
+                  { icon: "📋", text: "Show me all items in 'Employee' List" },
+                  { icon: "📤", text: "Summarise the file Finance_Guide in Company Knowledge Base" },
+                  { icon: "✨", text: "Create a new item in TaskList" }
                 ].map((s) => (
                   <button
                     key={s.text}
