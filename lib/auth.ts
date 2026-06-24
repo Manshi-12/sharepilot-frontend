@@ -4,7 +4,7 @@ import { v4 as uuidv4 } from "uuid";
 import { refreshTokensContainer } from "./cosmos";
 
 const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET!);
-const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "15m";
+const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "8h";
 const REFRESH_EXPIRES_DAYS = parseInt(process.env.REFRESH_TOKEN_EXPIRES_DAYS || "7");
 
 // ── Password ──────────────────────────────────────────────────────────────────

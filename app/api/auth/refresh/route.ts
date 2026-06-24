@@ -14,6 +14,6 @@ export async function POST(req: NextRequest) {
 
   const accessToken = await signAccessToken(user.userId, user.email);
   const res = NextResponse.json({ ok: true });
-  res.headers.append("Set-Cookie", `${ACCESS_TOKEN_COOKIE}=${accessToken}; ${cookieOptions(15 * 60)}`);
+  res.headers.append("Set-Cookie", `${ACCESS_TOKEN_COOKIE}=${accessToken}; ${cookieOptions(8 * 60 * 60)}`);
   return res;
 }

@@ -123,6 +123,7 @@ export default function ChatPage() {
   const [backendStatus, setBackendStatus] = useState<"ok" | "degraded" | "unknown">("unknown");
   const [pendingUpload, setPendingUpload] = useState<{ name: string; base64: string; mimeType: string } | null>(null);
   const [libraryInput, setLibraryInput] = useState("");
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -139,6 +140,15 @@ export default function ChatPage() {
   }, []);
 
   useEffect(() => { loadSessions(); loadUser(); }, []);
+
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+        await fetch("/api/auth/refresh", { method: "POST" });
+      } catch { }
+    }, 10 * 60 * 1000); // every 10 minutes
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
@@ -812,7 +822,7 @@ color = mix(color, bg, 0.12);
                         {isUser ? (
                           <div className="flex flex-col gap-2">
                             {msg.attachedFileName && (
-                              <div 
+                              <div
                                 className="flex items-center gap-2 px-2 py-1.5 bg-white/20 border border-white/30 rounded-xl w-fit cursor-pointer hover:bg-white/30 transition-colors"
                                 onClick={() => {
                                   if (msg.attachedFileBase64 && msg.attachedFileMimeType) {
@@ -839,7 +849,29 @@ color = mix(color, bg, 0.12);
                           <ThinkingIndicator />
                         ) : (
                           <div className="sp-markdown">
-                            <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+                            <ReactMarkdown remarkPlugins={[remarkGfm]}
+                              components={{
+                                img: ({ src, alt }) => (
+                                  <span style={{ display: "block", marginTop: "6px" }}>
+                                    <img
+                                      src={src}
+                                      alt={alt || "image"}
+                                      onClick={() => setImagePreview(src as string ?? null)}
+                                      style={{
+                                        width: "140px", height: "100px", objectFit: "cover",
+                                        borderRadius: "10px", border: "2px solid #dee8ff",
+                                        cursor: "zoom-in", display: "block",
+                                        transition: "transform 0.15s",
+                                      }}
+                                      onMouseEnter={(e) => (e.currentTarget.style.transform = "scale(1.04)")}
+                                      onMouseLeave={(e) => (e.currentTarget.style.transform = "scale(1)")}
+                                    />
+                                    <span style={{ fontSize: "11px", color: "#71787f", marginTop: "3px", display: "block" }}>
+                                      🔍 Click to preview
+                                    </span>
+                                  </span>
+                                )
+                              }}>{msg.content}</ReactMarkdown>
                             {msg.streaming && <span className="sp-cursor" />}
                           </div>
                         )}
@@ -914,7 +946,7 @@ color = mix(color, bg, 0.12);
 
               {/* File preview chip — shows when a file is attached */}
               {attachedFile && (
-                <div 
+                <div
                   className="flex items-center gap-2 mb-2 px-2 py-1.5 bg-[#e7eeff] border border-[#dee8ff] rounded-xl w-fit cursor-pointer hover:bg-[#d8e3ff] transition-colors"
                   onClick={() => setPreviewFile(attachedFile)}
                 >
@@ -1174,11 +1206,11 @@ color = mix(color, bg, 0.12);
       )}
       {/* File preview modal */}
       {previewFile && (
-        <div 
+        <div
           className="fixed inset-0 bg-[#121c2c]/30 backdrop-blur-sm flex items-center justify-center z-[60] px-4 py-8"
           onClick={() => setPreviewFile(null)}
         >
-          <div 
+          <div
             className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-full flex flex-col overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
@@ -1190,8 +1222,8 @@ color = mix(color, bg, 0.12);
                 </svg>
                 {previewFile.name}
               </h3>
-              <button 
-                onClick={() => setPreviewFile(null)} 
+              <button
+                onClick={() => setPreviewFile(null)}
                 className="text-[#71787f] hover:text-[#2b6389] p-1.5 rounded-lg hover:bg-[#e7eeff] transition-colors"
               >
                 <svg width="18" height="18" fill="none" viewBox="0 0 16 16">
@@ -1220,6 +1252,59 @@ color = mix(color, bg, 0.12);
                 </div>
               )}
             </div>
+          </div>
+        </div>
+      )}
+      {/* Image preview modal — renders at page level for proper full-screen overlay */}
+      {imagePreview && (
+        <div
+          onClick={() => setImagePreview(null)}
+          style={{
+            position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+            background: "rgba(18, 28, 44, 0.85)",
+            backdropFilter: "blur(6px)",
+            WebkitBackdropFilter: "blur(6px)",
+            zIndex: 9999,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            cursor: "zoom-out",
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              position: "relative",
+              background: "white",
+              borderRadius: "20px",
+              padding: "14px",
+              boxShadow: "0 32px 80px rgba(0,0,0,0.5)",
+              maxWidth: "min(640px, 90vw)",
+            }}
+          >
+            <button
+              onClick={() => setImagePreview(null)}
+              style={{
+                position: "absolute", top: "-12px", right: "-12px",
+                background: "#121c2c", border: "2px solid white",
+                borderRadius: "50%", width: "32px", height: "32px",
+                color: "white", cursor: "pointer", fontSize: "16px",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
+                zIndex: 1,
+              }}
+            >✕</button>
+            <img
+              src={imagePreview}
+              alt="preview"
+              style={{
+                display: "block",
+                maxWidth: "100%",
+                maxHeight: "72vh",
+                borderRadius: "12px",
+                objectFit: "contain",
+              }}
+            />
           </div>
         </div>
       )}
