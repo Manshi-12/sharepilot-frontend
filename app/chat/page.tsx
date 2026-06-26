@@ -740,7 +740,7 @@ color = mix(color, bg, 0.12);
           </div>
         </header>
 
-        <div className="flex-1 overflow-y-auto px-4 md:px-8 py-6">
+        <div className="flex-1 overflow-y-auto px-4 md:px-8 py-6 sp-chat-scroll">
           {loadingMessages ? (
             <div className="max-w-3xl mx-auto space-y-4 animate-pulse">
               {[...Array(4)].map((_, i) => (
@@ -769,13 +769,13 @@ color = mix(color, bg, 0.12);
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-8 w-full max-w-2xl mx-auto">
                 {[
                   { icon: "📋", text: "Show me all items in 'Employee' List" },
-                  { icon: "📤", text: "Summarise the file Finance_Guide in Company Knowledge Base" },
+                  { icon: "📤", text: "Summarise Finance_Guide in Company Knowledge Base" },
                   { icon: "✨", text: "Create a new item in TaskList" }
                 ].map((s) => (
                   <button
                     key={s.text}
                     onClick={() => setInput(s.text)}
-                    className="flex flex-col items-center justify-center gap-3 p-5 rounded-3xl bg-white/50 backdrop-blur-md border border-white/60 shadow-[0_4px_24px_rgba(0,0,0,0.04)] text-[#2b6389] text-sm text-center font-medium hover:-translate-y-1.5 hover:shadow-[0_12px_32px_rgba(43,99,137,0.12)] hover:bg-white/80 transition-all duration-300"
+                    className="flex flex-col items-center justify-center gap-3 p-3 rounded-3xl bg-white/50 backdrop-blur-md border border-white/60 shadow-[0_4px_24px_rgba(0,0,0,0.04)] text-[#2b6389] text-sm text-center font-medium hover:-translate-y-1.5 hover:shadow-[0_12px_32px_rgba(43,99,137,0.12)] hover:bg-white/80 transition-all duration-300"
                   >
                     <span className="text-3xl mb-1">{s.icon}</span>
                     <span className="leading-snug">{s.text}</span>
