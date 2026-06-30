@@ -68,7 +68,13 @@ export async function verifyRefreshToken(
   const rawToken = compositeToken.slice(dotIndex + 1);
 
   try {
-    const { resource } = await refreshTokensContainer.item(tokenId, undefined).read();
+    const { resources } = await refreshTokensContainer.items
+      .query({
+        query: "SELECT * FROM c WHERE c.tokenId = @tokenId",
+        parameters: [{ name: "@tokenId", value: tokenId }],
+      })
+      .fetchAll();
+    const resource = resources[0];
     if (!resource) return null;
 
     if (new Date(resource.expiresAt) < new Date()) {

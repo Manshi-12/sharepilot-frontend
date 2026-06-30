@@ -474,3 +474,13 @@ body {
   filter: blur(6px);
   animation: sp-orb-float-2 8s ease-in-out infinite reverse;
 }
+
+@keyframes sp-logo-float {
+  0% { transform: translateY(0px); }
+  50% { transform: translateY(-8px); }
+  100% { transform: translateY(0px); }
+}
+
+.animate-logo-float {
+  animation: sp-logo-float 3.5s ease-in-out infinite;
+}

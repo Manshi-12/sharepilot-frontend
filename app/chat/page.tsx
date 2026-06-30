@@ -39,6 +39,7 @@ interface Session {
   sessionId: string;
   title: string;
   lastUpdated: string;
+  messageCount?: number;
 }
 
 interface UserProfile {
@@ -646,7 +647,10 @@ color = mix(color, bg, 0.12);
                       }`}
                   >
                     <p className="text-sm font-medium truncate">{s.title}</p>
-                    <p className="text-xs text-[#71787f] mt-0.5">{formatDate(s.lastUpdated)}</p>
+                    <p className="text-xs text-[#71787f] mt-0.5">
+                      {formatDate(s.lastUpdated)}
+                      {s.messageCount !== undefined ? ` • ${s.messageCount} msg${s.messageCount !== 1 ? 's' : ''}` : ''}
+                    </p>
                   </button>
                 )}
 
@@ -752,7 +756,7 @@ color = mix(color, bg, 0.12);
           ) : messages.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-center max-w-md mx-auto">
               <div className="w-24 h-24 flex items-center justify-center mb-2">
-                <svg width="100%" height="100%" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" className="drop-shadow-sm hover:drop-shadow-md transition-all duration-300 hover:-translate-y-1">
+                <svg width="100%" height="100%" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" className="drop-shadow-sm hover:drop-shadow-md transition-all duration-300 hover:-translate-y-1 animate-logo-float">
                   <circle cx="34" cy="20" r="14" fill="#04686B" opacity="0.85" />
                   <circle cx="44" cy="34" r="15" fill="#1BBCC2" opacity="0.85" />
                   <circle cx="32" cy="46" r="12" fill="#5EE5E5" opacity="0.85" />

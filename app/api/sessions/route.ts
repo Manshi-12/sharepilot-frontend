@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyAccessToken, ACCESS_TOKEN_COOKIE } from "@/lib/auth";
-import { sessionsContainer } from "@/lib/cosmos";
+import { sessionsContainer, messagesContainer } from "@/lib/cosmos";
 
 export async function GET(req: NextRequest) {
   const token = req.cookies.get(ACCESS_TOKEN_COOKIE)?.value;
@@ -16,5 +16,22 @@ export async function GET(req: NextRequest) {
     })
     .fetchAll();
 
-  return NextResponse.json({ sessions: resources });
+  const { resources: counts } = await messagesContainer.items
+    .query({
+      query: "SELECT c.sessionId, COUNT(1) as messageCount FROM c WHERE c.userId = @userId GROUP BY c.sessionId",
+      parameters: [{ name: "@userId", value: payload.userId }],
+    })
+    .fetchAll();
+
+  const countMap = counts.reduce((acc, curr) => {
+    acc[curr.sessionId] = curr.messageCount;
+    return acc;
+  }, {} as Record<string, number>);
+
+  const sessionsWithCounts = resources.map(session => ({
+    ...session,
+    messageCount: countMap[session.sessionId] || 0
+  }));
+
+  return NextResponse.json({ sessions: sessionsWithCounts });
 }
