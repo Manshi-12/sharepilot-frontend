@@ -215,7 +215,8 @@ export default function ChatPage() {
       varying vec2 v_texCoord;
       void main() {
         vec2 uv = v_texCoord;
-        float t = u_time * 0.30;
+        // Increased speed for faster movement
+        float t = u_time * 1.25; 
         
         // 7 animated blobs covering the whole screen
         vec2 p1 = vec2(0.15 + 0.18 * sin(t * 0.9),       0.15 + 0.15 * cos(t * 0.7));
@@ -254,8 +255,6 @@ color = mix(color, azure,  smoothstep(0.44, 0.0, d5) * 0.14);
 color = mix(color, navy,   smoothstep(0.32, 0.0, d6) * 0.10);
 color = mix(color, teal,   smoothstep(0.46, 0.0, d7) * 0.12);
 
-// Slight desaturation for a glass effect
-color = mix(color, bg, 0.12);
         gl_FragColor = vec4(color, 1.0);
       }`;
 
@@ -774,11 +773,11 @@ color = mix(color, bg, 0.12);
                 {[
                   { icon: "📋", text: "Show me all items in 'Employee' List" },
                   { icon: "📤", text: "Summarise Finance_Guide in Company Knowledge Base" },
-                  { icon: "✨", text: "Create a new item in TaskList" }
+                  { icon: "✨", text: "Create a new List named TaskList" }
                 ].map((s) => (
                   <button
                     key={s.text}
-                    onClick={() => setInput(s.text)}
+                    onClick={() => { setInput(s.text); setTimeout(() => textareaRef.current?.focus(), 0); }}
                     className="flex flex-col items-center justify-center gap-3 p-3 rounded-3xl bg-white/50 backdrop-blur-md border border-white/60 shadow-[0_4px_24px_rgba(0,0,0,0.04)] text-[#2b6389] text-sm text-center font-medium hover:-translate-y-1.5 hover:shadow-[0_12px_32px_rgba(43,99,137,0.12)] hover:bg-white/80 transition-all duration-300"
                   >
                     <span className="text-3xl mb-1">{s.icon}</span>
@@ -1014,13 +1013,13 @@ color = mix(color, bg, 0.12);
                   onChange={(e) => {
                     setInput(e.target.value);
                     e.target.style.height = "auto";
-                    e.target.style.height = Math.min(e.target.scrollHeight, 100) + "px";
+                    e.target.style.height = Math.min(e.target.scrollHeight, 80) + "px";
                   }}
                   onKeyDown={handleKeyDown}
                   placeholder="Ask SharePilot anything about your SharePoint site…"
                   disabled={sending}
-                  className="flex-1 resize-none bg-transparent text-[#121c2c] placeholder-[#71787f] text-sm outline-none max-h-20 leading-[44px] h-[44px] disabled:opacity-50"
-                  style={{ fontFamily: "'Manrope', sans-serif" }}
+                  className="flex-1 resize-none bg-transparent text-[#121c2c] placeholder-[#71787f] text-sm outline-none max-h-[80px] leading-5 py-[12px] overflow-y-auto disabled:opacity-50 sp-input-scroll"
+                  style={{ fontFamily: "'Manrope', sans-serif", lineHeight: "1.25rem" }}
                 />
 
                 {/* Send button */}
